@@ -400,16 +400,52 @@ function assemble(
   const tasks: Record<string, ScheduledTask> = {}
   const criticalPath: string[] = []
 
+  // Measured from the remaining work, not from a start that already happened.
+  const floats = new Map<string, number>()
+  for (const id of order) {
+    const node = nodes.get(id)!
+    floats.set(id, node.calendar.countWorkingDays(node.remainingStart, node.lateStart))
+  }
+
+  /**
+   * The critical path is the chain with the *least* float, not the chain with
+   * float at or below zero.
+   *
+   * Those are the same thing only when the backward pass is anchored on the
+   * computed finish. A deadline replaces that anchor, which shifts every float
+   * by roughly a constant and broke the old `totalFloat <= 0` test in both
+   * directions:
+   *
+   *   - Behind the deadline, nearly everything feeding the end goes negative.
+   *     On the demo project that painted 17 of 19 tasks red, so red stopped
+   *     meaning "this is the chain to fix" and started meaning "you are late"
+   *     — which the deadline chip and the summary already say.
+   *   - Comfortably ahead of it, nothing reached zero at all, so a healthy
+   *     project showed no critical path whatsoever. That one was arguably
+   *     worse: the feature silently vanished exactly when things were fine.
+   *
+   * Taking the minimum restores the real meaning in both cases, and is
+   * identical to the old behaviour when there is no deadline, because then the
+   * minimum is zero by construction.
+   *
+   * Finished work is excluded from the minimum as well as from the path: it
+   * cannot delay anything, so letting it set the bar would hide the live chain
+   * behind completed tasks.
+   */
+  let minFloat = Number.POSITIVE_INFINITY
+  for (const id of order) {
+    if (nodes.get(id)!.status === 'complete') continue
+    const f = floats.get(id)!
+    if (f < minFloat) minFloat = f
+  }
+
   for (const id of order) {
     const node = nodes.get(id)!
     const cal = node.calendar
 
-    // Measured from the remaining work, not from a start that already happened.
-    const totalFloat = cal.countWorkingDays(node.remainingStart, node.lateStart)
+    const totalFloat = floats.get(id)!
     const freeFloat = computeFreeFloat(node, graph.outgoing.get(id)!, nodes, totalFloat)
-    // Finished work cannot delay anything, so it is never critical however its
-    // float arithmetic lands.
-    const isCritical = totalFloat <= 0 && node.status !== 'complete'
+    const isCritical = node.status !== 'complete' && totalFloat === minFloat
 
     tasks[id] = {
       id,

@@ -10,6 +10,7 @@ import json
 import os
 import random
 import sys
+import time
 import urllib.request
 import uuid
 
@@ -172,9 +173,28 @@ st, _, _ = download(f"/attachments/{pdf_id}")
 check("and it is gone", st == 404, f"got {st}")
 
 print("\n== deleting the task takes its files with it ==")
+# The row going is only half of it. `attachments` cascades from `tasks`, so the
+# rows vanish on their own — but nothing used to unlink the files, and a live
+# instance accumulated thirteen files against four rows. On a real job those are
+# completion photographs, so the directory only ever grows, and a restore brings
+# back files the app cannot see.
+upload_dir = os.environ.get("STRINGLINE_UPLOAD_DIR")
+before = set(os.listdir(upload_dir)) if upload_dir and os.path.isdir(upload_dir) else None
+
 call("DELETE", f"/projects/{pid}/tasks/{tid}")
 st, _, _ = download(f"/attachments/{png_id}")
 check("attachments cascade with the task", st == 404, f"got {st}")
+
+if before is None:
+    print("  SKIP  set STRINGLINE_UPLOAD_DIR to also check the files left the disk")
+else:
+    time.sleep(0.5)  # the unlink happens after the response is sent
+    after = set(os.listdir(upload_dir))
+    leaked = before - after
+    check("and the files leave the disk too", len(after) < len(before),
+          f"{len(before)} -> {len(after)} files")
+    check("exactly the deleted task's files went", len(leaked) == 3,
+          f"removed {len(leaked)}")
 
 print("\n" + ("ALL ATTACHMENT CHECKS PASSED" if not failures else f"FAILURES: {failures}"))
 sys.exit(1 if failures else 0)

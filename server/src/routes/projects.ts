@@ -12,6 +12,7 @@ import { authenticate, requirePlanner } from '../middleware/auth.js'
 import { checkCompanyLimit, requireCompany } from '../middleware/company.js'
 import { ScheduleError } from '../scheduler/index.js'
 import { previewMove, unconstrainedStart, type MoveMode } from '../services/moves.js'
+import { removeStoredFiles } from '../services/files.js'
 import { buildSummary } from '../services/summary.js'
 import {
   createProjectFromTemplate,
@@ -668,6 +669,8 @@ router.delete(
     const projectId = param(req, 'projectId')
     const taskId = param(req, 'taskId')
     try {
+      // Filled inside the transaction, acted on once it has committed.
+      let orphaned: string[] = []
       const payload = await transaction(async (client) => {
         if (!(await ownsProject(client, projectId, req.company!.id))) return null
         const existing = await client.query<{ name: string }>(
@@ -675,6 +678,15 @@ router.delete(
           [taskId, projectId],
         )
         if (existing.rows.length === 0) return null
+        // Read before the delete: `attachments` cascades from `tasks`, so once
+        // this commits there is nothing left to say which files on disk
+        // belonged to it. Collected here, unlinked after the commit.
+        const files = await client.query<{ stored_name: string }>(
+          'SELECT stored_name FROM attachments WHERE task_id = $1',
+          [taskId],
+        )
+        orphaned = files.rows.map((r) => r.stored_name)
+
         return applyAndExplain(
           client,
           {
@@ -684,7 +696,8 @@ router.delete(
             oldValue: existing.rows[0]!.name,
           },
           async () => {
-            // Dependencies cascade on the foreign key, so the links go with it.
+            // Dependencies and attachment rows cascade on the foreign key, so
+            // the links and the rows go with it.
             await client.query('DELETE FROM tasks WHERE id = $1 AND project_id = $2', [
               taskId,
               projectId,
@@ -696,6 +709,9 @@ router.delete(
         res.status(404).json({ error: 'Task not found' })
         return
       }
+      // After the commit, never inside it: unlinking during the transaction
+      // would destroy the files and then lose them for good on a rollback.
+      await removeStoredFiles(orphaned)
       broadcast(projectId, 'schedule.changed', { finishAfter: payload.finishAfter })
       res.json({
         schedule: payload.result,

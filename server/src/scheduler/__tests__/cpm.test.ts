@@ -391,6 +391,80 @@ describe('project deadline', () => {
     )
     expect(result.deadlineFloat).toBe(10)
   })
+
+  /**
+   * A deadline moves the backward-pass anchor, which shifts every float. The
+   * critical path has to survive that, because it is the one thing on the chart
+   * that says *where to push*. Marking criticality at "float <= 0" did not: it
+   * over-reported behind schedule and vanished entirely when ahead.
+   */
+  describe('the critical path survives a deadline', () => {
+    // A(5) ─┬─ B(5) ─┬─ D(1)
+    //       └─ C(1) ─┘
+    // A → B → D is the chain that sets the finish. C has four days of slack
+    // whatever the deadline says, so it must never be critical.
+    const network = {
+      tasks: [
+        { id: 'A', name: 'Groundwork', durationDays: 5 },
+        { id: 'B', name: 'Frame', durationDays: 5 },
+        { id: 'C', name: 'Signage', durationDays: 1 },
+        { id: 'D', name: 'Handover', durationDays: 1 },
+      ],
+      dependencies: [
+        { predecessorId: 'A', successorId: 'B', type: 'FS' as const },
+        { predecessorId: 'A', successorId: 'C', type: 'FS' as const },
+        { predecessorId: 'B', successorId: 'D', type: 'FS' as const },
+        { predecessorId: 'C', successorId: 'D', type: 'FS' as const },
+      ],
+    }
+
+    test('with no deadline, the longest chain is critical', () => {
+      const result = solve(build(network))
+      expect(result.criticalPath.sort()).toEqual(['A', 'B', 'D'])
+      expect(result.tasks['C']!.isCritical).toBe(false)
+    })
+
+    test('behind a deadline, only the longest chain is critical — not everything late', () => {
+      const result = solve(build({ ...network, projectDeadline: '2026-01-12' }))
+
+      // Everything is late, so every float is negative...
+      expect(result.deadlineFloat!).toBeLessThan(0)
+      expect(result.tasks['C']!.totalFloat).toBeLessThan(0)
+
+      // ...but being late is not the same as being the reason. C still has
+      // slack relative to the chain beside it, so it stays off the path.
+      expect(result.criticalPath.sort()).toEqual(['A', 'B', 'D'])
+      expect(result.tasks['C']!.isCritical).toBe(false)
+    })
+
+    test('comfortably ahead of a deadline, there is still a critical path', () => {
+      const result = solve(build({ ...network, projectDeadline: '2026-06-01' }))
+
+      // Nothing is anywhere near zero float here. Requiring float <= 0 reported
+      // no critical path at all, which is the chart quietly losing its point
+      // precisely when the project is healthy.
+      expect(result.tasks['A']!.totalFloat).toBeGreaterThan(0)
+      expect(result.criticalPath.sort()).toEqual(['A', 'B', 'D'])
+      expect(result.tasks['C']!.isCritical).toBe(false)
+    })
+
+    test('completed work never sets the bar for what counts as critical', () => {
+      // A is done, so its float is irrelevant — and must not become the
+      // minimum that everything else is measured against.
+      const result = solve(
+        build({
+          ...network,
+          tasks: [
+            { ...network.tasks[0]!, actualStart: '2026-01-05', actualFinish: '2026-01-09' },
+            ...network.tasks.slice(1),
+          ],
+          dataDate: '2026-01-12',
+        }),
+      )
+      expect(result.tasks['A']!.isCritical).toBe(false)
+      expect(result.criticalPath.sort()).toEqual(['B', 'D'])
+    })
+  })
 })
 
 describe('rejections', () => {

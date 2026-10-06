@@ -131,3 +131,41 @@ export function safeDownloadName(originalName: string): string {
       .slice(0, 180) || 'download'
   )
 }
+
+/**
+ * Where uploads live. Read here rather than in each route, so the routes and
+ * the cleanup below cannot disagree about it.
+ */
+export const UPLOAD_DIR = process.env.UPLOAD_DIR ?? '/data/uploads'
+
+/**
+ * Remove stored files whose rows have gone.
+ *
+ * `attachments` cascades from both `tasks` and `projects`, which means deleting
+ * a task takes its attachment rows with it and leaves the files behind forever.
+ * That is how a live instance ended up with thirteen files and four rows.
+ *
+ * It matters more than tidiness for two reasons: on a real job these are
+ * completion photographs rather than test fixtures, so the directory only ever
+ * grows; and a restore brings back files the application has no way to see or
+ * reach.
+ *
+ * Deliberately best-effort. The database is the record of what exists, so a
+ * failed unlink must never fail the request that deleted the row — the worst
+ * case is the leak we already had.
+ */
+export async function removeStoredFiles(storedNames: string[]): Promise<void> {
+  const { unlink } = await import('node:fs/promises')
+  const { join } = await import('node:path')
+  await Promise.all(
+    storedNames.map((name) =>
+      unlink(join(UPLOAD_DIR, name)).catch((error: NodeJS.ErrnoException) => {
+        // ENOENT is unremarkable: the row outlived the file, which is the
+        // harmless direction of the same inconsistency.
+        if (error.code !== 'ENOENT') {
+          console.warn(`[files] could not remove ${name}: ${error.message}`)
+        }
+      }),
+    ),
+  )
+}

@@ -15,14 +15,7 @@ import multer from 'multer'
 import { transaction } from '../db/pool.js'
 import { authenticate, requirePlanner } from '../middleware/auth.js'
 import { requireCompany } from '../middleware/company.js'
-import {
-  ACCEPTED_EXTENSIONS,
-  MAX_UPLOAD_BYTES,
-  identify,
-  safeDownloadName,
-  storedNameFor,
-  UploadRejected,
-} from '../services/files.js'
+import { ACCEPTED_EXTENSIONS, MAX_UPLOAD_BYTES, UPLOAD_DIR, UploadRejected, identify, safeDownloadName, storedNameFor } from '../services/files.js'
 import { param } from './util.js'
 
 const router = Router()
@@ -38,7 +31,7 @@ const router = Router()
  */
 const guarded = [authenticate, requireCompany] as const
 
-const UPLOAD_DIR = process.env.UPLOAD_DIR ?? '/data/uploads'
+
 
 // Memory storage, deliberately: multer's disk storage writes the file before
 // anything has looked at it, which means a rejected upload still touched the
