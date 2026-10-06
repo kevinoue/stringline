@@ -1,0 +1,53 @@
+# Stringline — NAS deployment.
+#
+# Port 3006 on the host was verified free (3001 nodeodm, 3002 linguavibe,
+# 3003 the photo stitcher that must not be touched, 3005 sharptalk, 7000
+# rdrelay are all taken).
+#
+# Postgres deliberately publishes no host port. It is reachable only on this
+# compose network, so it cannot be reached from the LAN.
+
+services:
+  api:
+    build: ./server
+    container_name: stringline-api
+    restart: unless-stopped
+    ports:
+      - "3006:3006"
+    volumes:
+      # Uploaded documents. A named volume, so a rebuild never takes the
+      # completion proof for a finished job with it.
+      - stringline-uploads:/data/uploads
+    environment:
+      NODE_ENV: production
+      PORT: 3006
+      UPLOAD_DIR: /data/uploads
+      BASE_PATH: ${BASE_PATH:-/stringline/api}
+      DATABASE_URL: postgresql://stringline:${POSTGRES_PASSWORD}@db:5432/stringline
+      JWT_SECRET: ${JWT_SECRET}
+      CORS_ORIGIN: ${CORS_ORIGIN:-https://kevinoue.com}
+    depends_on:
+      db:
+        condition: service_healthy
+
+  db:
+    image: postgres:16-alpine
+    container_name: stringline-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: stringline
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: stringline
+    volumes:
+      - stringline-db-data:/var/lib/postgresql/data
+    healthcheck:
+      # The API runs migrations at boot, so it must not start before the
+      # database can actually answer.
+      test: ["CMD-SHELL", "pg_isready -U stringline -d stringline"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  stringline-db-data:
+  stringline-uploads:

@@ -1,0 +1,14 @@
+node_modules/
+dist/
+.env
+.env.*
+!.env.example
+*.log
+.DS_Store
+
+# Private infrastructure notes — NAS paths, internal IPs, which ports belong to
+# which of Kevin's other services. Useful to him, an information gift to anyone
+# else. Kept local; the public deployment story lives in README.md.
+DEPLOY.md
+CLAUDE.md
+deploy.sh

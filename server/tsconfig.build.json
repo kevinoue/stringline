@@ -1,0 +1,6 @@
+{
+  // Production build. The base config includes tests so editors and
+  // `npm run typecheck` still check them; they just must not reach the image.
+  "extends": "./tsconfig.json",
+  "exclude": ["src/**/__tests__/**"]
+}
