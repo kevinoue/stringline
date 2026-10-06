@@ -8,76 +8,42 @@
 
 import bcrypt from 'bcryptjs'
 import { Router, type Request, type Response } from 'express'
-import { transaction } from '../db/pool.js'
 import { authenticate, generateToken } from '../middleware/auth.js'
 import { resolveCompanyBySlug } from '../middleware/company.js'
 import { pool } from '../db/pool.js'
+import {
+  BCRYPT_ROUNDS,
+  isDuplicateSlug,
+  MIN_PASSWORD_LENGTH,
+  provisionCompany,
+  ProvisioningError,
+} from '../services/provisioning.js'
 
 const router = Router()
 
-const BCRYPT_ROUNDS = 12
-const SLUG_PATTERN = /^[a-z0-9][a-z0-9-]{1,38}[a-z0-9]$/
-
+/**
+ * Creating a company and its owner is shared with `/setup`, which the
+ * first-run installer calls. The two differ in who may call them, not in what
+ * they build — see `services/provisioning.ts`.
+ */
 router.post('/signup', async (req: Request, res: Response) => {
-  const { companyName, slug, email, password, name } = req.body ?? {}
-
-  if (!companyName || !slug || !email || !password || !name) {
-    res.status(400).json({ error: 'companyName, slug, email, password and name are required' })
-    return
-  }
-  const normalisedSlug = String(slug).toLowerCase().trim()
-  if (!SLUG_PATTERN.test(normalisedSlug)) {
-    res.status(400).json({
-      error: 'Company code must be 3–40 characters, lowercase letters, numbers and hyphens',
-    })
-    return
-  }
-  if (String(password).length < 8) {
-    res.status(400).json({ error: 'Password must be at least 8 characters' })
-    return
-  }
-
-  const normalisedEmail = String(email).toLowerCase().trim()
-
   try {
-    const result = await transaction(async (client) => {
-      // Stringline is free: no trial, no expiry, no plan to upgrade to. The
-      // column defaults carry plan='free' and status='active'.
-      const company = await client.query<{ id: string }>(
-        `INSERT INTO companies (name, slug) VALUES ($1, $2) RETURNING id`,
-        [companyName, normalisedSlug],
-      )
-      const companyId = company.rows[0]!.id
-
-      // Every company needs a calendar before it can hold a project.
-      await client.query(
-        `INSERT INTO calendars (company_id, name, working_weekdays, is_default)
-         VALUES ($1, 'Standard week (Mon–Fri)', '{1,2,3,4,5}', TRUE)`,
-        [companyId],
-      )
-
-      const hash = await bcrypt.hash(String(password), BCRYPT_ROUNDS)
-      const user = await client.query<{ id: string }>(
-        `INSERT INTO users (company_id, email, password_hash, name, role)
-         VALUES ($1, $2, $3, $4, 'owner') RETURNING id`,
-        [companyId, normalisedEmail, hash, name],
-      )
-
-      return { companyId, userId: user.rows[0]!.id }
-    })
-
+    const result = await provisionCompany(req.body ?? {})
     res.status(201).json({
-      token: generateToken(result.userId, result.companyId),
+      token: generateToken(result.userId, result.companyId, result.tokenVersion),
       companyId: result.companyId,
-      slug: normalisedSlug,
+      slug: result.slug,
     })
   } catch (error) {
-    const message = (error as { code?: string; message: string })
-    if (message.code === '23505') {
+    if (error instanceof ProvisioningError) {
+      res.status(error.status).json({ error: error.message })
+      return
+    }
+    if (isDuplicateSlug(error)) {
       res.status(409).json({ error: 'That company code is already taken' })
       return
     }
-    console.error('[signup]', message.message)
+    console.error('[signup]', (error as Error).message)
     res.status(500).json({ error: 'Signup failed' })
   }
 })
@@ -140,8 +106,8 @@ router.post('/change-password', authenticate, async (req: Request, res: Response
     res.status(400).json({ error: 'currentPassword and newPassword are required' })
     return
   }
-  if (String(newPassword).length < 8) {
-    res.status(400).json({ error: 'New password must be at least 8 characters' })
+  if (String(newPassword).length < MIN_PASSWORD_LENGTH) {
+    res.status(400).json({ error: `New password must be at least ${MIN_PASSWORD_LENGTH} characters` })
     return
   }
   if (String(newPassword) === String(currentPassword)) {

@@ -2,13 +2,46 @@ import { useCallback, useEffect, useState } from 'react'
 import { api, ApiError, clearToken, getToken, setToken, SOURCE_URL } from './api/client.js'
 import type { Project, Template } from './api/types.js'
 import { ChangePassword } from './components/ChangePassword.js'
+import { Setup } from './components/Setup.js'
 import { ProjectView } from './ProjectView.js'
 
 export function App() {
   const [authed, setAuthed] = useState(() => getToken() !== null)
   const [projectId, setProjectId] = useState<string | null>(null)
 
-  if (!authed) return <Login onDone={() => setAuthed(true)} />
+  /**
+   * Whether this instance still needs its first account.
+   *
+   * `null` means we have not heard back yet. Showing the login during that gap
+   * and then swapping it for the setup screen would make a fresh install look
+   * broken for a moment, so nothing auth-related renders until we know. Only
+   * asked when there is no token — someone already signed in cannot need setup.
+   */
+  const [setupNeeded, setSetupNeeded] = useState<boolean | null>(authed ? false : null)
+
+  useEffect(() => {
+    if (setupNeeded !== null) return
+    let cancelled = false
+    api
+      .setupStatus()
+      .then((r) => {
+        if (!cancelled) setSetupNeeded(r.needed)
+      })
+      // A failure here must not strand the user on a spinner. Fall through to
+      // the login, which will report whatever is actually wrong.
+      .catch(() => {
+        if (!cancelled) setSetupNeeded(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [setupNeeded])
+
+  if (!authed) {
+    if (setupNeeded === null) return <div className="auth" />
+    if (setupNeeded) return <Setup onDone={() => setAuthed(true)} />
+    return <Login onDone={() => setAuthed(true)} />
+  }
   if (projectId) return <ProjectView projectId={projectId} onBack={() => setProjectId(null)} />
   return (
     <ProjectList

@@ -7,6 +7,7 @@ import { closePool, pool } from './db/pool.js'
 import authRoutes from './routes/auth.js'
 import attachmentRoutes from './routes/attachments.js'
 import projectRoutes from './routes/projects.js'
+import setupRoutes, { setupNeeded, setupToken } from './routes/setup.js'
 import sseRoutes from './routes/sse.js'
 
 const app = express()
@@ -47,6 +48,26 @@ api.use(
   }),
   authRoutes,
 )
+/**
+ * First-run setup gets the tight budget too. It is guessable only by brute
+ * force, and brute force is exactly what a rate limit is for.
+ *
+ * `GET /setup/status` is polled once per page load by every visitor before
+ * anyone has signed in, so the allowance has to cover ordinary traffic rather
+ * than just the one POST that claims the instance.
+ */
+api.use(
+  '/setup',
+  rateLimit({
+    windowMs: 15 * 60 * 1000,
+    limit: Number(process.env.SETUP_RATE_LIMIT ?? 60),
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: 'Too many attempts. Please wait a few minutes.' },
+  }),
+  setupRoutes,
+)
+
 api.use(
   rateLimit({ windowMs: 15 * 60 * 1000, limit: 1000, standardHeaders: true, legacyHeaders: false }),
 )
@@ -65,8 +86,39 @@ api.get('/health', async (_req, res) => {
 
 app.use(BASE_PATH, api)
 
+/**
+ * Print the setup code when the instance has no accounts yet.
+ *
+ * The log is the channel on purpose: reading it requires access to the host,
+ * which is the one thing that distinguishes whoever deployed this from a
+ * stranger who found the URL. Printed on every boot while setup is pending, so
+ * a restart part-way through an install does not strand anyone.
+ */
+async function announceSetup(): Promise<void> {
+  try {
+    if (!(await setupNeeded())) return
+    const token = setupToken()
+    console.log('')
+    console.log('  ┌─────────────────────────────────────────────────────────┐')
+    console.log('  │  This Stringline has no accounts yet.                   │')
+    console.log('  │  Open the web app and use this setup code:              │')
+    console.log(`  │                                                         │`)
+    // 51 = the 57-character interior, less the six leading spaces.
+    console.log(`  │      ${token.padEnd(51)}│`)
+    console.log('  │                                                         │')
+    console.log('  │  It stops working as soon as the first company exists.  │')
+    console.log('  └─────────────────────────────────────────────────────────┘')
+    console.log('')
+  } catch (error) {
+    // Never fatal. A server that will not boot because it could not print a
+    // hint is worse than one you have to read the docs to install.
+    console.warn('[setup] could not determine setup state:', (error as Error).message)
+  }
+}
+
 async function start(): Promise<void> {
   await migrate()
+  await announceSetup()
   const server = app.listen(PORT, () => {
     console.log(`[stringline] listening on :${PORT}, API at ${BASE_PATH}`)
   })

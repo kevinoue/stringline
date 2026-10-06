@@ -115,6 +115,17 @@ input {
 .auth-card label { display: flex; flex-direction: column; gap: 5px; font-size: 12px; color: var(--ink-soft); }
 .error { color: var(--bad); }
 
+/* First-run setup asks for six fields where login asks for three, and needs
+   room for the hints that stop people guessing at what a company code is. */
+.auth-card-wide { width: 380px; gap: 10px; max-height: 94vh; overflow-y: auto; }
+.auth-card-wide hr { width: 100%; border: 0; border-top: 1px solid var(--line); margin: 6px 0; }
+.auth-card-wide .hint { margin: -4px 0 2px; }
+.auth-card-wide code {
+  display: inline-block; margin-top: 3px;
+  font-size: 10px; padding: 1px 4px; white-space: nowrap;
+  background: var(--bg); border: 1px solid var(--line); border-radius: 3px;
+}
+
 /* ── Projects ─────────────────────────────────────────────────────────────── */
 
 .new-project { display: flex; gap: 8px; margin-bottom: 16px; }

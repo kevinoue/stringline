@@ -60,7 +60,34 @@ rule — the calendars precompute because day-by-day walking made large schedule
 listener is attached natively because React's passive handlers silently swallow
 `preventDefault`.
 
-## Running it
+## Installing it
+
+With Docker, from a clone:
+
+```bash
+sh ops/install.sh
+```
+
+That generates a `.env` with real secrets, brings up the API and PostgreSQL,
+and prints a **setup code**. Open the web app, enter the code, and create your
+company and owner account. Setup stops working the moment a company exists.
+
+The code is printed to the server log rather than shown on the page on purpose.
+WordPress's open install page is a real vulnerability — between starting the
+containers and filling in the form, whoever reaches the URL first owns the
+instance, and on a public URL that race is not hypothetical. Reading the
+container log requires access to the host, which is the thing that
+distinguishes you from a stranger who found the URL. Jenkins does the same.
+
+If you lose it:
+
+```bash
+docker compose logs api | grep -B2 -A6 'no accounts yet'
+```
+
+It is derived from `JWT_SECRET`, so it survives a restart part-way through.
+
+### Running it from source
 
 Requires Node 24+ and PostgreSQL 16.
 
@@ -91,6 +118,17 @@ python3 scripts/smoke.py                   # 32 HTTP checks against a running se
 python3 scripts/drag.py                    # drag semantics
 python3 scripts/templates.py               # templates
 cd ../web && npm run shoot                 # headless-browser checks + screenshots
+```
+
+`scripts/setup.py` and `web/scripts/setup-shoot.mjs` cover first-run setup, and
+need the opposite starting conditions from everything else — a database with no
+companies in it. Run them against a throwaway database, with the same
+`JWT_SECRET` the server was started with:
+
+```bash
+createdb stringline_setuptest
+DATABASE_URL=postgresql://localhost/stringline_setuptest JWT_SECRET=whatever npm start
+STRINGLINE_JWT_SECRET=whatever python3 scripts/setup.py
 ```
 
 ## Licence

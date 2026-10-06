@@ -87,6 +87,19 @@ export const api = {
     name: string
   }) => request<{ token: string }>('POST', '/auth/signup', body),
 
+  /** Whether this instance has any accounts yet. Asked before showing a login. */
+  setupStatus: () => request<{ needed: boolean }>('GET', '/setup/status'),
+
+  /** Claim a fresh self-hosted instance. The code is printed in the server log. */
+  setup: (body: {
+    setupToken: string
+    companyName: string
+    slug: string
+    email: string
+    password: string
+    name: string
+  }) => request<{ token: string; slug: string }>('POST', '/setup', body),
+
   listTemplates: () => request<{ templates: Template[] }>('GET', '/projects/templates'),
 
   createFromTemplate: (templateId: string, name: string, startDate: string, deadline?: string) =>
