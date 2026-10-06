@@ -12,3 +12,6 @@ dist/
 DEPLOY.md
 CLAUDE.md
 deploy.sh
+
+# Real alerting credentials for the health check.
+ops/ops.env

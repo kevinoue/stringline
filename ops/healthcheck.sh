@@ -2,10 +2,14 @@
 #
 # Stringline health check.
 #
-# Exits non-zero when something is wrong, and says what in plain language. DSM
-# Task Scheduler is configured to email on abnormal termination, so a non-zero
-# exit *is* the alarm — no SMTP credentials live in here, and there is no second
-# notification system to keep working.
+# Exits non-zero when something is wrong and says what in plain language, so it
+# is useful from a shell or from any scheduler that reports failures.
+#
+# It also raises a DSM notification itself, rather than relying on the
+# scheduler to report the failure for it. That is not belt-and-braces: cron on
+# this NAS runs with MAILTO="" and DSM's own SMTP is unconfigured
+# (smtp_from_mail is empty), so a non-zero exit alone would have alarmed
+# precisely nobody. An alarm you have not watched fire is not an alarm.
 #
 # It checks the public URL rather than localhost:3006, so a passing run also
 # proves Caddy, the TLS certificate and the /stringline/api path all still work.
@@ -28,6 +32,18 @@ URL=${STRINGLINE_HEALTH_URL:-https://kevinoue.com/stringline/api/health}
 STATUS=/volume1/docker/stringline-backups/status.json
 BACKUP_MAX_AGE_HOURS=36 # a nightly job may be a few hours late; two days is not late
 DISK_MIN_GB=5
+
+HEALTH_LOG=/volume1/docker/stringline-backups/health.log
+
+# Alerting goes through Resend, with the key read from a file outside the
+# repository. Not the first choice — DSM has notification CLIs — but
+# `synodsmnotify` and `synonotify` only accept registered i18n message keys and
+# reject arbitrary text outright, so they cannot carry a custom alarm at all.
+#
+# No key means log-only and a non-zero exit. That is the same degrade-quietly
+# rule the app's own email service follows, and it is what makes this script
+# safe to hand to someone self-hosting.
+ALERT_ENV=${STRINGLINE_ALERT_ENV:-/volume1/docker/stringline/ops.env}
 
 problems=""
 note() {
@@ -103,6 +119,37 @@ done
 echo
 if [ -n "$problems" ]; then
     echo "UNHEALTHY: $problems"
+    [ -w "$(dirname "$HEALTH_LOG")" ] 2>/dev/null \
+        && echo "$(date '+%Y-%m-%d %H:%M:%S')  UNHEALTHY: $problems" >> "$HEALTH_LOG"
+
+    if [ -f "$ALERT_ENV" ]; then
+        # shellcheck disable=SC1090
+        . "$ALERT_ENV"
+        if [ -n "${RESEND_API_KEY:-}" ] && [ -n "${ALERT_EMAIL:-}" ]; then
+            # The problems string is interpolated into JSON, so the characters
+            # that would break it have to go. A mangled alert still arrives;
+            # an invalid one is rejected and you hear nothing.
+            safe=$(echo "$problems" | tr -d '"\\\n\r' | cut -c1-900)
+            if curl -fsS --max-time 20 -X POST https://api.resend.com/emails \
+                -H "Authorization: Bearer $RESEND_API_KEY" \
+                -H "Content-Type: application/json" \
+                -d "{\"from\":\"${ALERT_FROM:-onboarding@resend.dev}\",
+                     \"to\":[\"$ALERT_EMAIL\"],
+                     \"subject\":\"Stringline is unhealthy\",
+                     \"text\":\"$safe\"}" >/dev/null 2>&1
+            then
+                echo "(alert emailed to $ALERT_EMAIL)"
+            else
+                echo "(ALERT EMAIL FAILED — the problem above went unreported)"
+            fi
+        else
+            echo "(no RESEND_API_KEY/ALERT_EMAIL in $ALERT_ENV — logged only)"
+        fi
+    else
+        echo "(no $ALERT_ENV — logged only, nobody has been told)"
+    fi
     exit 1
 fi
+[ -w "$(dirname "$HEALTH_LOG")" ] 2>/dev/null \
+    && echo "$(date '+%Y-%m-%d %H:%M:%S')  healthy" >> "$HEALTH_LOG"
 echo "HEALTHY"
