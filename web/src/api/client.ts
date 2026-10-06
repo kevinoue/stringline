@@ -233,6 +233,6 @@ export const api = {
  * something to remember to put on a marketing page.
  */
 export const SOURCE_URL =
-  import.meta.env.VITE_SOURCE_URL ?? 'https://github.com/kevinouellette/stringline'
+  import.meta.env.VITE_SOURCE_URL ?? 'https://github.com/kevinoue/stringline'
 
 export { API_BASE }

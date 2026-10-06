@@ -969,6 +969,19 @@ console.log('\n== licence obligations ==')
   console.log('   ', JSON.stringify(link))
   check('source is reachable from the app', Boolean(link?.href), link?.href ?? 'missing')
   check('and points somewhere real', /^https?:\/\//.test(link?.href ?? ''), link?.href ?? '')
+
+  // A link that 404s satisfies section 13 on paper and not at all in fact, so
+  // follow it. Skipped without network rather than failed — the obligation is
+  // the publisher's, and a test that fails on a train is a test people delete.
+  if (/^https?:\/\//.test(link?.href ?? '')) {
+    let status = null
+    try {
+      status = (await fetch(link.href, { method: 'HEAD', redirect: 'follow' })).status
+    } catch (e) {
+      console.log(`     SKIP  cannot reach the network (${e.message})`)
+    }
+    if (status !== null) check('and the source actually resolves', status === 200, `HTTP ${status}`)
+  }
 }
 
 console.log('\n== console ==')
