@@ -306,8 +306,12 @@ console.log('\n== rows hold still when the schedule shifts ==')
   )
   const firstRow = page.locator('.table-row').first()
   await firstRow.click()
-  await page.waitForSelector('.panel select')
-  await page.selectOption('.panel select', 'START_NO_EARLIER_THAN')
+  // Addressed by label, not position. `.panel select` used to be unambiguous
+  // and stopped being so the moment a second dropdown was added, at which point
+  // this set a constraint value on the wrong control and timed out.
+  const constraint = page.locator('.panel label:has-text("Constraint") select')
+  await constraint.waitFor()
+  await constraint.selectOption('START_NO_EARLIER_THAN')
   await page.fill('.panel input[type="date"]', '2026-03-16')
   await page.click('.panel button[type="submit"]')
   await page.waitForTimeout(1600)
@@ -319,8 +323,7 @@ console.log('\n== rows hold still when the schedule shifts ==')
 
   // And put it back.
   await page.locator(`.table-row:has-text("${before[0]}")`).first().click()
-  await page.waitForSelector('.panel select')
-  await page.selectOption('.panel select', 'ASAP')
+  await page.locator('.panel label:has-text("Constraint") select').selectOption('ASAP')
   await page.click('.panel button[type="submit"]')
   await page.waitForTimeout(1600)
   await page.screenshot({ path: `${OUT}/11-layout.png` })
@@ -527,8 +530,7 @@ console.log('\n== apply actually commits ==')
     check('Apply actually moved the task', startAfter !== startBefore, `${startBefore} -> ${startAfter}`)
 
     await page.click(`.table-row:has-text("${name}")`)
-    await page.waitForSelector('.panel select')
-    await page.selectOption('.panel select', 'ASAP')
+    await page.locator('.panel label:has-text("Constraint") select').selectOption('ASAP')
     await page.click('.panel button[type="submit"]')
     await page.waitForTimeout(1500)
     const restored = (
@@ -582,7 +584,7 @@ await targetRow.click()
 await page.waitForSelector('.panel', { timeout: 5000 })
 // The panel is a controlled form; wait for it to re-seed rather than just exist.
 await page.waitForFunction(
-  (expected) => document.querySelector('.panel input')?.value === expected,
+  (expected) => document.querySelector('.panel input')?.value === expected, // the name field, first in the form
   targetName,
   { timeout: 5000 },
 )

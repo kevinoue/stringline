@@ -6,6 +6,7 @@ import type {
   Invite,
   Member,
   MutationResult,
+  Phase,
   Project,
   ProjectSummary,
   Role,
@@ -200,7 +201,23 @@ export const api = {
       baseline: Baseline | null
       dependencies: Dependency[]
       details: TaskDetail[]
+      phases: Phase[]
     }>('GET', `/projects/${projectId}/schedule`),
+
+  // ── Phases ────────────────────────────────────────────────────────────────
+  // Grouping only — none of these move a date, so none return a MutationResult.
+
+  createPhase: (projectId: string, name: string) =>
+    request<{ phase: Phase }>('POST', `/projects/${projectId}/phases`, { name }),
+
+  updatePhase: (projectId: string, phaseId: string, changes: Partial<Pick<Phase, 'name' | 'visibility'>>) =>
+    request<{ phase: Phase }>('PATCH', `/projects/${projectId}/phases/${phaseId}`, changes),
+
+  deletePhase: (projectId: string, phaseId: string) =>
+    request<{ unassignedTasks: number }>('DELETE', `/projects/${projectId}/phases/${phaseId}`),
+
+  reorderPhases: (projectId: string, order: string[]) =>
+    request<{ phases: Phase[] }>('PUT', `/projects/${projectId}/phases/order`, { order }),
 
   createTask: (projectId: string, body: { name: string; durationDays: number }) =>
     request<MutationResult>('POST', `/projects/${projectId}/tasks`, body),

@@ -6,10 +6,12 @@ import type {
   Impact,
   ProjectSummary,
   Schedule,
+  Phase,
   TaskDetail,
 } from './api/types.js'
 import { ImpactBanner } from './components/ImpactBanner.js'
 import { SummaryPanel } from './components/SummaryPanel.js'
+import { Phases } from './components/Phases.js'
 import { TaskPanel } from './components/TaskPanel.js'
 import { TaskTable } from './components/TaskTable.js'
 import { Gantt, type DragResult } from './gantt/Gantt.js'
@@ -35,6 +37,7 @@ export function ProjectView({ projectId, onBack }: { projectId: string; onBack()
   const [baseline, setBaseline] = useState<Baseline | null>(null)
   const [dependencies, setDependencies] = useState<Dependency[]>([])
   const [details, setDetails] = useState<Record<string, TaskDetail>>({})
+  const [phases, setPhases] = useState<Phase[]>([])
   const [summary, setSummary] = useState<ProjectSummary | null>(null)
   const [summaryOpen, setSummaryOpen] = useState(true)
   const [dayWidth, setDayWidth] = useState<number>(ZOOM_WIDTH.day)
@@ -46,6 +49,7 @@ export function ProjectView({ projectId, onBack }: { projectId: string; onBack()
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [adding, setAdding] = useState(false)
+  const [managingPhases, setManagingPhases] = useState(false)
   const [newName, setNewName] = useState('')
   const [newDuration, setNewDuration] = useState('1')
 
@@ -55,6 +59,7 @@ export function ProjectView({ projectId, onBack }: { projectId: string; onBack()
     setBaseline(data.baseline)
     setDependencies(data.dependencies)
     setDetails(Object.fromEntries(data.details.map((d) => [d.id, d])))
+    setPhases(data.phases)
     // Recomputed on every load, so it is never stale relative to the chart
     // beside it. A summary that disagrees with the bars is worse than none.
     api.summary(projectId).then(setSummary).catch(() => setSummary(null))
@@ -251,6 +256,9 @@ export function ProjectView({ projectId, onBack }: { projectId: string; onBack()
         </div>
         <div className="spacer" />
         <button onClick={() => setAdding((v) => !v)}>+ Task</button>
+        <button className="ghost" onClick={() => setManagingPhases(true)}>
+          Phases{phases.length ? ` (${phases.length})` : ''}
+        </button>
         <div className="zooms">
           <button
             onClick={() => setDayWidth((w) => clampDayWidth(w / 1.4))}
@@ -439,13 +447,35 @@ export function ProjectView({ projectId, onBack }: { projectId: string; onBack()
           scrollTop={scrollTop}
           onScrollTop={setScrollTop}
         />
+        {managingPhases && (
+          <Phases
+            projectId={projectId}
+            phases={phases}
+            details={details}
+            onChanged={() => void load()}
+            onClose={() => setManagingPhases(false)}
+          />
+        )}
         {selected && selectedDetail && (
           <TaskPanel
             task={selected}
             detail={selectedDetail}
             schedule={schedule}
             dependencies={dependencies}
+            phases={phases}
             busy={busy}
+            onCreatePhase={async (name) => {
+              try {
+                const made = (await api.createPhase(projectId, name)).phase
+                // Added locally as well as refetched, so the select can be set
+                // to it immediately rather than after a round trip.
+                setPhases((current) => [...current, made])
+                return made
+              } catch (e) {
+                setError(e instanceof ApiError ? e.message : String(e))
+                return null
+              }
+            }}
             onClose={() => setSelectedId(null)}
             onSave={(patch) =>
               void mutate(() => api.updateTask(projectId, selected.id, patch)).then((ok) => {

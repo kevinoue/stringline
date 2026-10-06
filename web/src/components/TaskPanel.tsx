@@ -3,6 +3,7 @@ import { Attachments } from './Attachments.js'
 import type {
   ConstraintType,
   Dependency,
+  Phase,
   Schedule,
   ScheduledTask,
   TaskDetail,
@@ -13,8 +14,11 @@ interface Props {
   detail: TaskDetail
   schedule: Schedule
   dependencies: Dependency[]
+  phases: Phase[]
   busy: boolean
   onSave(patch: Record<string, unknown>): void
+  /** Create a phase inline and return it, so a task can be filed without leaving. */
+  onCreatePhase(name: string): Promise<Phase | null>
   onDelete(): void
   onAddDependency(predecessorId: string, type: string, lagDays: number): void
   onRemoveDependency(dependencyId: string): void
@@ -41,8 +45,10 @@ export function TaskPanel({
   detail,
   schedule,
   dependencies,
+  phases,
   busy,
   onSave,
+  onCreatePhase,
   onDelete,
   onAddDependency,
   onRemoveDependency,
@@ -57,6 +63,7 @@ export function TaskPanel({
   const [percent, setPercent] = useState(
     detail.percentComplete === null ? '' : String(detail.percentComplete),
   )
+  const [phaseId, setPhaseId] = useState<string | null>(detail.phaseId)
   const [newPred, setNewPred] = useState('')
   const [newType, setNewType] = useState('FS')
   const [newLag, setNewLag] = useState('0')
@@ -79,6 +86,7 @@ export function TaskPanel({
     setActualStart(detail.actualStart ?? '')
     setActualFinish(detail.actualFinish ?? '')
     setPercent(detail.percentComplete === null ? '' : String(detail.percentComplete))
+    setPhaseId(detail.phaseId)
     setNewPred('')
   }, [detail.id])
 
@@ -100,6 +108,7 @@ export function TaskPanel({
       actualStart: actualStart || null,
       actualFinish: actualFinish || null,
       percentComplete: percent === '' ? null : Number(percent),
+      phaseId,
     }
     onSave(patch)
   }
@@ -127,6 +136,33 @@ export function TaskPanel({
             value={duration}
             onChange={(e) => setDuration(e.target.value)}
           />
+        </label>
+
+        {/* Phases arrived with templates and could never be set by hand, so a
+            blank project could not have them at all. They are also what lets
+            the chart roll up into a handful of bars on a small screen. */}
+        <label>
+          Phase
+          <select
+            value={phaseId ?? ''}
+            onChange={(e) => {
+              if (e.target.value === '__new__') {
+                const name = prompt('Name the new phase')?.trim()
+                if (!name) return
+                void onCreatePhase(name).then((made) => made && setPhaseId(made.id))
+                return
+              }
+              setPhaseId(e.target.value || null)
+            }}
+          >
+            <option value="">No phase</option>
+            {phases.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}
+              </option>
+            ))}
+            <option value="__new__">New phase…</option>
+          </select>
         </label>
 
         <label>

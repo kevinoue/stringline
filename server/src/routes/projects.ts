@@ -281,11 +281,21 @@ router.get('/:projectId/schedule', async (req: Request, res: Response) => {
          FROM tasks WHERE project_id = $1`,
         [param(req, 'projectId')],
       )
+      // Phases come back whether or not any exist. They are how the mobile
+      // chart stays legible — six rolled-up bars fit a phone where twenty-two
+      // tasks do not — so the client needs the grouping, not just each task's
+      // phase_id.
+      const phases = await client.query(
+        `SELECT id, name, sort_order AS "sortOrder", visibility
+           FROM phases WHERE project_id = $1 ORDER BY sort_order, name`,
+        [param(req, 'projectId')],
+      )
       return {
         schedule: result,
         baseline,
         dependencies: dependencies.rows,
         details: details.rows,
+        phases: phases.rows,
       }
     })
     if (!payload) {
@@ -404,6 +414,170 @@ router.post('/:projectId/tasks', requirePlanner, async (req: Request, res: Respo
     })
   } catch (error) {
     handleError(res, error, 'create-task')
+  }
+})
+
+// ─── Phases ──────────────────────────────────────────────────────────────────
+//
+// Phases existed in the schema and arrived with templates, but nothing could
+// create or change one — so 28 of 83 projects had phases and the other 55 could
+// never get them. None of these routes touch a date, which is why they do not
+// go through `applyAndExplain`: grouping tasks does not move them, and an
+// impact banner reading "nothing changed" on every rename is noise.
+
+router.post('/:projectId/phases', requirePlanner, async (req: Request, res: Response) => {
+  const { name, visibility } = req.body ?? {}
+  if (!name || !String(name).trim()) {
+    res.status(400).json({ error: 'A phase needs a name' })
+    return
+  }
+
+  try {
+    const phase = await transaction(async (client) => {
+      if (!(await ownsProject(client, param(req, 'projectId'), req.company!.id))) return null
+
+      // Appended, not inserted at zero. A new phase belongs at the end of the
+      // job until someone says otherwise.
+      const { rows } = await client.query(
+        `INSERT INTO phases (project_id, name, visibility, sort_order)
+         VALUES ($1, $2, COALESCE($3, 'client'),
+                 COALESCE((SELECT MAX(sort_order) + 1 FROM phases WHERE project_id = $1), 0))
+         RETURNING id, name, sort_order AS "sortOrder", visibility`,
+        [param(req, 'projectId'), String(name).trim(), visibility ?? null],
+      )
+      return rows[0]
+    })
+
+    if (!phase) {
+      res.status(404).json({ error: 'Project not found' })
+      return
+    }
+    broadcast(param(req, 'projectId'), 'phases.changed', {})
+    res.status(201).json({ phase })
+  } catch (error) {
+    handleError(res, error, 'create-phase')
+  }
+})
+
+router.patch('/:projectId/phases/:phaseId', requirePlanner, async (req: Request, res: Response) => {
+  const { name, visibility, sortOrder } = req.body ?? {}
+  if (name === undefined && visibility === undefined && sortOrder === undefined) {
+    res.status(400).json({ error: 'Nothing to change' })
+    return
+  }
+  if (name !== undefined && !String(name).trim()) {
+    res.status(400).json({ error: 'A phase needs a name' })
+    return
+  }
+
+  try {
+    const phase = await transaction(async (client) => {
+      if (!(await ownsProject(client, param(req, 'projectId'), req.company!.id))) return null
+
+      const { rows } = await client.query(
+        `UPDATE phases
+            SET name       = COALESCE($3, name),
+                visibility = COALESCE($4, visibility),
+                sort_order = COALESCE($5, sort_order)
+          WHERE id = $1 AND project_id = $2
+          RETURNING id, name, sort_order AS "sortOrder", visibility`,
+        [
+          param(req, 'phaseId'),
+          param(req, 'projectId'),
+          name === undefined ? null : String(name).trim(),
+          visibility ?? null,
+          sortOrder ?? null,
+        ],
+      )
+      return rows[0] ?? null
+    })
+
+    if (!phase) {
+      res.status(404).json({ error: 'Phase not found' })
+      return
+    }
+    broadcast(param(req, 'projectId'), 'phases.changed', {})
+    res.json({ phase })
+  } catch (error) {
+    handleError(res, error, 'update-phase')
+  }
+})
+
+/**
+ * Delete a phase. Its tasks survive, unassigned.
+ *
+ * The schema already says `ON DELETE SET NULL`, and that is the right rule:
+ * deleting a grouping must never delete the work inside it. The count comes
+ * back so the UI can say what became loose rather than leaving someone to
+ * wonder where twelve tasks went.
+ */
+router.delete('/:projectId/phases/:phaseId', requirePlanner, async (req: Request, res: Response) => {
+  try {
+    const result = await transaction(async (client) => {
+      if (!(await ownsProject(client, param(req, 'projectId'), req.company!.id))) return null
+
+      const { rows: counted } = await client.query<{ count: string }>(
+        'SELECT COUNT(*)::text AS count FROM tasks WHERE phase_id = $1',
+        [param(req, 'phaseId')],
+      )
+      const { rowCount } = await client.query(
+        'DELETE FROM phases WHERE id = $1 AND project_id = $2',
+        [param(req, 'phaseId'), param(req, 'projectId')],
+      )
+      return rowCount === 0 ? null : { unassignedTasks: Number(counted[0]!.count) }
+    })
+
+    if (!result) {
+      res.status(404).json({ error: 'Phase not found' })
+      return
+    }
+    broadcast(param(req, 'projectId'), 'phases.changed', {})
+    res.json(result)
+  } catch (error) {
+    handleError(res, error, 'delete-phase')
+  }
+})
+
+/**
+ * Reorder every phase at once.
+ *
+ * One request rather than one per phase, because dragging a phase up a list
+ * renumbers several of them and doing that as N requests leaves the order
+ * briefly wrong — and permanently wrong if one of them fails.
+ */
+router.put('/:projectId/phases/order', requirePlanner, async (req: Request, res: Response) => {
+  const { order } = req.body ?? {}
+  if (!Array.isArray(order) || order.length === 0) {
+    res.status(400).json({ error: 'order must be a non-empty array of phase ids' })
+    return
+  }
+
+  try {
+    const phases = await transaction(async (client) => {
+      if (!(await ownsProject(client, param(req, 'projectId'), req.company!.id))) return null
+
+      for (const [index, id] of order.entries()) {
+        await client.query(
+          'UPDATE phases SET sort_order = $3 WHERE id = $1 AND project_id = $2',
+          [id, param(req, 'projectId'), index],
+        )
+      }
+      const { rows } = await client.query(
+        `SELECT id, name, sort_order AS "sortOrder", visibility
+           FROM phases WHERE project_id = $1 ORDER BY sort_order, name`,
+        [param(req, 'projectId')],
+      )
+      return rows
+    })
+
+    if (!phases) {
+      res.status(404).json({ error: 'Project not found' })
+      return
+    }
+    broadcast(param(req, 'projectId'), 'phases.changed', {})
+    res.json({ phases })
+  } catch (error) {
+    handleError(res, error, 'reorder-phases')
   }
 })
 

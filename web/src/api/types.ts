@@ -106,6 +106,21 @@ export interface TaskDetail {
   sortOrder: number
 }
 
+/**
+ * A named stage of a project.
+ *
+ * Grouping, not scheduling — a phase has no dates of its own. Its span is
+ * derived from the tasks in it, which is what lets the mobile chart roll
+ * twenty-two tasks up into six legible bars.
+ */
+export interface Phase {
+  id: string
+  name: string
+  sortOrder: number
+  /** Phases are the level a client is meant to see, so they default to visible. */
+  visibility: 'internal' | 'client'
+}
+
 export interface MutationResult {
   schedule: Schedule
   impact: Impact | null

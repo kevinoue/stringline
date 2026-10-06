@@ -48,33 +48,45 @@ project = call("POST", "/projects", {
     "deadline": "2026-04-10"})["project"]
 pid = project["id"]
 
-# (key, label, working days)
+# Phases, in the order the work happens. They group the tasks below, and the
+# mobile chart rolls up to exactly this level — five bars read on a phone where
+# nineteen do not.
+PHASES = ["Enabling works", "Structure", "First fix", "Finishes", "Handover"]
+phase_ids = {
+    name: call("POST", f"/projects/{pid}/phases", {"name": name})["phase"]["id"]
+    for name in PHASES
+}
+
+# (key, label, working days, phase)
 TASKS = [
-    ("permit",     "Permit approval",            5),
-    ("demo",       "Strip out and demolition",   8),
-    ("abate",      "Asbestos abatement",         4),
-    ("m1",         "Demolition complete",        0),
-    ("frame",      "Framing",                   10),
-    ("rough_e",    "Electrical rough-in",        6),
-    ("rough_p",    "Plumbing rough-in",          5),
-    ("hvac",       "HVAC ductwork",              7),
-    ("inspect",    "Rough-in inspection",        2),
-    ("m2",         "Rough-in signed off",        0),
-    ("insul",      "Insulation",                 3),
-    ("drywall",    "Drywall and tape",           9),
-    ("paint",      "Paint",                      6),
-    ("floor",      "Flooring",                   7),
-    ("fixtures",   "Fixtures and trim",          5),
-    ("joinery",    "Joinery and millwork",       8),
-    ("commission", "Commissioning",              4),
-    ("snag",       "Snagging",                   5),
-    ("m3",         "Handover",                   0),
+    ("permit",     "Permit approval",            5, "Enabling works"),
+    ("demo",       "Strip out and demolition",   8, "Enabling works"),
+    ("abate",      "Asbestos abatement",         4, "Enabling works"),
+    ("m1",         "Demolition complete",        0, "Enabling works"),
+    ("frame",      "Framing",                   10, "Structure"),
+    ("rough_e",    "Electrical rough-in",        6, "First fix"),
+    ("rough_p",    "Plumbing rough-in",          5, "First fix"),
+    ("hvac",       "HVAC ductwork",              7, "First fix"),
+    ("inspect",    "Rough-in inspection",        2, "First fix"),
+    ("m2",         "Rough-in signed off",        0, "First fix"),
+    ("insul",      "Insulation",                 3, "Finishes"),
+    ("drywall",    "Drywall and tape",           9, "Finishes"),
+    ("paint",      "Paint",                      6, "Finishes"),
+    ("floor",      "Flooring",                   7, "Finishes"),
+    ("fixtures",   "Fixtures and trim",          5, "Finishes"),
+    ("joinery",    "Joinery and millwork",       8, "Finishes"),
+    ("commission", "Commissioning",              4, "Handover"),
+    ("snag",       "Snagging",                   5, "Handover"),
+    ("m3",         "Handover",                   0, "Handover"),
 ]
 
 ids = {}
-for key, label, days in TASKS:
+for key, label, days, phase in TASKS:
     ids[key] = call("POST", f"/projects/{pid}/tasks",
                     {"name": label, "durationDays": days})["taskId"]
+    # Set separately: POST /tasks takes a name and a duration, and widening it
+    # to carry a phase would change a route four suites already depend on.
+    call("PATCH", f"/projects/{pid}/tasks/{ids[key]}", {"phaseId": phase_ids[phase]})
 
 LINKS = [
     ("permit", "demo", "FS", 0),

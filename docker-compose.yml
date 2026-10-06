@@ -26,6 +26,14 @@ services:
       DATABASE_URL: postgresql://stringline:${POSTGRES_PASSWORD}@db:5432/stringline
       JWT_SECRET: ${JWT_SECRET}
       CORS_ORIGIN: ${CORS_ORIGIN:-https://kevinoue.com}
+      # Optional. Unset means invites come back as a code to pass on by hand and
+      # self-service password reset hides itself — a supported configuration,
+      # not a broken one. Defaulted to empty so compose does not warn on a .env
+      # written before these existed.
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      RESEND_FROM_EMAIL: ${RESEND_FROM_EMAIL:-}
+      # Where invite and reset links point.
+      PUBLIC_URL: ${PUBLIC_URL:-https://kevinoue.com/stringline}
     depends_on:
       db:
         condition: service_healthy
