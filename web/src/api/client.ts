@@ -3,11 +3,15 @@ import type {
   Baseline,
   Dependency,
   HistoryEntry,
+  Invite,
+  Member,
   MutationResult,
   Project,
   ProjectSummary,
+  Role,
   Schedule,
   TaskDetail,
+  TeamView,
   Template,
 } from './types.js'
 
@@ -89,6 +93,63 @@ export const api = {
 
   /** Whether this instance has any accounts yet. Asked before showing a login. */
   setupStatus: () => request<{ needed: boolean }>('GET', '/setup/status'),
+
+  // ── Team ──────────────────────────────────────────────────────────────────
+
+  team: () => request<TeamView>('GET', '/team'),
+
+  invite: (body: { email: string; role: Role; name?: string }) =>
+    request<{ invite: Invite; emailed: boolean; emailError?: string }>(
+      'POST',
+      '/team/invites',
+      body,
+    ),
+
+  revokeInvite: (id: string) => request<void>('DELETE', `/team/invites/${id}`),
+
+  /** Unauthenticated: what a code is worth before anyone types a password. */
+  validateInvite: (code: string) =>
+    request<{
+      valid: boolean
+      email: string
+      name: string | null
+      role: Role
+      companyName: string
+      slug: string
+    }>('GET', `/team/invites/${encodeURIComponent(code)}/validate`),
+
+  acceptInvite: (code: string, password: string, name: string) =>
+    request<{ token: string; role: Role; slug: string }>(
+      'POST',
+      `/team/invites/${encodeURIComponent(code)}/accept`,
+      { password, name },
+    ),
+
+  resetTeammate: (id: string) =>
+    request<{ temporaryPassword: string; emailed: boolean; message: string }>(
+      'POST',
+      `/team/members/${id}/reset-password`,
+    ),
+
+  updateMember: (id: string, changes: { role?: Role; isActive?: boolean }) =>
+    request<{ member: Member }>('PATCH', `/team/members/${id}`, changes),
+
+  // ── Password recovery ─────────────────────────────────────────────────────
+
+  /** Whether self-service reset can work here. It needs email; the UI hides it otherwise. */
+  emailStatus: () => request<{ enabled: boolean }>('GET', '/auth/status'),
+
+  forgotPassword: (slug: string, email: string) =>
+    request<{ message: string }>('POST', '/auth/forgot-password', { slug, email }),
+
+  validateReset: (token: string) =>
+    request<{ valid: boolean }>(
+      'GET',
+      `/auth/reset-password/validate?token=${encodeURIComponent(token)}`,
+    ),
+
+  resetPassword: (token: string, newPassword: string) =>
+    request<{ message: string }>('POST', '/auth/reset-password', { token, newPassword }),
 
   /** Claim a fresh self-hosted instance. The code is printed in the server log. */
   setup: (body: {

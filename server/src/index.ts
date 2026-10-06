@@ -6,9 +6,11 @@ import { migrate } from './db/migrate.js'
 import { closePool, pool } from './db/pool.js'
 import authRoutes from './routes/auth.js'
 import attachmentRoutes from './routes/attachments.js'
+import passwordResetRoutes from './routes/password-reset.js'
 import projectRoutes from './routes/projects.js'
 import setupRoutes, { setupNeeded, setupToken } from './routes/setup.js'
 import sseRoutes from './routes/sse.js'
+import teamRoutes from './routes/team.js'
 
 const app = express()
 
@@ -47,6 +49,10 @@ api.use(
     message: { error: 'Too many attempts. Please wait a few minutes.' },
   }),
   authRoutes,
+  // Mounted inside the same `/auth` block rather than as a second `api.use`,
+  // which would stack two limiters on every request that reaches either. The
+  // reset routes carry their own tighter, hourly limit internally.
+  passwordResetRoutes,
 )
 /**
  * First-run setup gets the tight budget too. It is guessable only by brute
@@ -71,6 +77,7 @@ api.use(
 api.use(
   rateLimit({ windowMs: 15 * 60 * 1000, limit: 1000, standardHeaders: true, legacyHeaders: false }),
 )
+api.use('/team', teamRoutes)
 api.use('/projects', projectRoutes)
 api.use('/', attachmentRoutes)
 api.use('/', sseRoutes)

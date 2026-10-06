@@ -172,3 +172,45 @@ export interface Attachment {
   createdAt: string
   uploadedBy?: string | null
 }
+
+// ── Team ────────────────────────────────────────────────────────────────────
+
+export type Role = 'owner' | 'planner' | 'field' | 'client'
+
+export interface Member {
+  id: string
+  name: string
+  email: string
+  role: Role
+  is_active: boolean
+  created_at: string
+}
+
+export interface Invite {
+  id: string
+  email: string
+  name: string | null
+  role: Role
+  /** The code itself. Shown so an owner can copy it into a text message. */
+  token: string
+  /** Derived server-side, so moving domains does not strand old invites. */
+  url: string
+  expires_at: string
+  created_at: string
+  invited_by: string | null
+}
+
+export interface TeamView {
+  members: Member[]
+  /** The id of the person asking, so the UI can treat their own row differently. */
+  you: string
+  invites: Invite[]
+  /**
+   * Whether this server can send mail. The UI uses it to decide between
+   * "an invite has been emailed" and "here is the code, send it yourself" —
+   * rather than claiming an email went out that never could.
+   */
+  emailEnabled: boolean
+  /** Only owners and planners consume one. Field and client seats are free. */
+  seatsUsed: number
+}

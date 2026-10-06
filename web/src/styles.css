@@ -167,6 +167,56 @@ input {
 .modal .error { margin: 0; font-size: 12px; }
 .modal .done { margin: 0; color: var(--good); line-height: 1.5; }
 
+/* ── Team ─────────────────────────────────────────────────────────────────── */
+
+/* Wider than a prompt modal: this one holds a table of people and the invite
+   links that have to be readable enough to copy by eye. */
+.modal-wide { width: min(620px, 92vw); max-height: 88vh; overflow-y: auto; }
+.modal-wide h2 { margin: 0; font-size: 18px; }
+.modal-wide h3 {
+  margin: 10px 0 0; font-size: 12px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.06em; color: var(--ink-soft);
+}
+.modal-wide .modal-actions { display: flex; justify-content: flex-end; margin-top: 4px; }
+
+.team-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.team-table td { padding: 8px 4px; border-top: 1px solid var(--line); vertical-align: middle; }
+.team-table tr:first-child td { border-top: 0; }
+.team-table .sub { color: var(--ink-soft); font-size: 11px; }
+.team-table .right { text-align: right; white-space: nowrap; }
+.team-table td code { font-size: 11px; letter-spacing: 0.04em; }
+/* A disabled account still has to be readable — it is the row you click to
+   re-enable someone — so this dims rather than hides. */
+.team-table tr.inactive td { opacity: 0.45; }
+
+.invite-form { display: flex; gap: 6px; flex-wrap: wrap; }
+.invite-form input { flex: 1 1 140px; min-width: 0; }
+
+/* Where a code or link is parked so it can be copied. Deliberately prominent:
+   on an instance with no email configured this is the only way the invite
+   reaches anyone. */
+.handout {
+  display: flex; flex-direction: column; gap: 6px;
+  padding: 10px 12px; border-radius: 8px;
+  background: var(--bg); border: 1px solid var(--line);
+}
+.handout-row { display: flex; gap: 6px; align-items: center; }
+.handout-row code {
+  font-size: 12px; padding: 4px 8px; border-radius: 4px;
+  background: var(--panel); border: 1px solid var(--line);
+  overflow-x: auto; white-space: nowrap;
+}
+.handout-row code.grow { flex: 1; min-width: 0; }
+
+/* A button that reads as a link — used for "forgot your password?", which is
+   an aside rather than an action competing with Sign in. */
+button.linkish {
+  border: 0; background: none; padding: 0;
+  color: var(--ink-soft); font-size: 12px; text-decoration: underline;
+  align-self: center; cursor: pointer;
+}
+button.linkish:hover { color: var(--ink); background: none; }
+
 /* ── Impact banner ────────────────────────────────────────────────────────── */
 
 .impact {

@@ -1,9 +1,36 @@
 import { useCallback, useEffect, useState } from 'react'
 import { api, ApiError, clearToken, getToken, setToken, SOURCE_URL } from './api/client.js'
 import type { Project, Template } from './api/types.js'
+import { AcceptInvite } from './components/AcceptInvite.js'
 import { ChangePassword } from './components/ChangePassword.js'
+import { ForgotPassword, ResetPassword } from './components/ResetPassword.js'
 import { Setup } from './components/Setup.js'
+import { Team } from './components/Team.js'
 import { ProjectView } from './ProjectView.js'
+
+/**
+ * Invite and reset links arrive as query parameters rather than paths, because
+ * Stringline is served under a configurable base (`/stringline/` today, a bare
+ * domain later) and a query string survives that move without the link format
+ * having to know where the app is mounted.
+ *
+ * The parameter is stripped from the address bar once read, so a reset token
+ * does not sit in browser history or get pasted into a bug report along with
+ * the URL.
+ */
+function takeUrlParam(key: string): string | null {
+  const params = new URLSearchParams(window.location.search)
+  const value = params.get(key)
+  if (value === null) return null
+  params.delete(key)
+  const query = params.toString()
+  window.history.replaceState(
+    {},
+    '',
+    window.location.pathname + (query ? `?${query}` : '') + window.location.hash,
+  )
+  return value
+}
 
 export function App() {
   const [authed, setAuthed] = useState(() => getToken() !== null)
@@ -18,6 +45,10 @@ export function App() {
    * asked when there is no token — someone already signed in cannot need setup.
    */
   const [setupNeeded, setSetupNeeded] = useState<boolean | null>(authed ? false : null)
+
+  // Read once, on the first render, before anything can navigate.
+  const [inviteCode, setInviteCode] = useState(() => takeUrlParam('invite'))
+  const [resetToken, setResetToken] = useState(() => takeUrlParam('reset'))
 
   useEffect(() => {
     if (setupNeeded !== null) return
@@ -36,6 +67,22 @@ export function App() {
       cancelled = true
     }
   }, [setupNeeded])
+
+  // Both of these take precedence over everything else, including an existing
+  // session: someone following an invite link on a shared laptop means to join
+  // as themselves, not to land in whoever was signed in last.
+  if (resetToken) return <ResetPassword token={resetToken} onDone={() => setResetToken(null)} />
+  if (inviteCode) {
+    return (
+      <AcceptInvite
+        code={inviteCode}
+        onDone={() => {
+          setInviteCode(null)
+          setAuthed(true)
+        }}
+      />
+    )
+  }
 
   if (!authed) {
     if (setupNeeded === null) return <div className="auth" />
@@ -60,6 +107,26 @@ function Login({ onDone }: { onDone(): void }) {
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const [forgot, setForgot] = useState(false)
+
+  /**
+   * Whether this server can send mail. Self-service reset is the one feature
+   * that genuinely cannot work without it, so the link is hidden rather than
+   * shown and then failing. Starts false so it never flashes in and out.
+   */
+  const [canEmail, setCanEmail] = useState(false)
+  useEffect(() => {
+    let cancelled = false
+    api
+      .emailStatus()
+      .then((r) => !cancelled && setCanEmail(r.enabled))
+      .catch(() => !cancelled && setCanEmail(false))
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  if (forgot) return <ForgotPassword slug={slug} onBack={() => setForgot(false)} />
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -102,6 +169,11 @@ function Login({ onDone }: { onDone(): void }) {
         <button type="submit" disabled={busy}>
           {busy ? 'Signing in…' : 'Sign in'}
         </button>
+        {canEmail && (
+          <button type="button" className="linkish" onClick={() => setForgot(true)}>
+            Forgot your password?
+          </button>
+        )}
         <p className="source-note">
           Free and open source under the{' '}
           <a href="https://www.gnu.org/licenses/agpl-3.0.html" target="_blank" rel="noreferrer">
@@ -130,6 +202,7 @@ function ProjectList({
   const [templateId, setTemplateId] = useState<string>('')
   const [busy, setBusy] = useState(false)
   const [changingPassword, setChangingPassword] = useState(false)
+  const [showingTeam, setShowingTeam] = useState(false)
 
   const load = useCallback(async () => {
     try {
@@ -184,6 +257,9 @@ function ProjectList({
       <header className="toolbar">
         <h1 className="brand">Stringline</h1>
         <div className="spacer" />
+        <button className="ghost" onClick={() => setShowingTeam(true)}>
+          Team
+        </button>
         <button className="ghost" onClick={() => setChangingPassword(true)}>
           Change password
         </button>
@@ -193,6 +269,7 @@ function ProjectList({
       </header>
 
       {changingPassword && <ChangePassword onClose={() => setChangingPassword(false)} />}
+      {showingTeam && <Team onClose={() => setShowingTeam(false)} />}
 
       {error && <p className="error">{error}</p>}
 
