@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { Baseline, Dependency, Schedule, ScheduledTask } from '../api/types.js'
+import type { Baseline, Category, Dependency, Schedule, ScheduledTask } from '../api/types.js'
+import { PALETTE } from './palette.js'
 import { addDays, createTimeline, weekendBands, type Timeline } from './timeline.js'
 
 export const ROW_HEIGHT = 34
@@ -47,6 +48,24 @@ interface Props {
   /** Vertical scroll is owned by the parent so both panes stay in lockstep. */
   scrollTop: number
   onScrollTop(top: number): void
+
+  /** Category id per task, for the edge stripe and for focusing. */
+  categoryOf: Map<string, string>
+  categories: Category[]
+  /**
+   * The category being focused on, or null for all.
+   *
+   * Focusing dims everything else rather than hiding it — a foreman wants to
+   * see their work *in context*, with what runs before and after it still
+   * visible. Hiding the rest would answer a different question.
+   */
+  focusCategory: string | null
+  /**
+   * Which dimension owns colour. Never both: the chart has one rule — critical
+   * is the only saturated colour — and two colour systems competing for
+   * attention means neither is readable.
+   */
+  colourBy: 'critical' | 'category'
 }
 
 export function Gantt({
@@ -65,9 +84,21 @@ export function Gantt({
   preview,
   scrollTop,
   onScrollTop,
+  categoryOf,
+  categories,
+  focusCategory,
+  colourBy,
 }: Props) {
   const headerRef = useRef<HTMLDivElement>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
+
+  /** Palette key -> actual colours, resolved once rather than per bar. */
+  const colourFor = useMemo(() => {
+    const byKey = new Map(PALETTE.map((p) => [p.key, p]))
+    return new Map(
+      categories.map((c) => [c.id, byKey.get(c.colour) ?? byKey.get('slate')!]),
+    )
+  }, [categories])
   const [drag, setDrag] = useState<{ taskId: string; mode: DragMode; dx: number } | null>(null)
   /**
    * A pointerup after a drag still fires a click, which would select the row and
@@ -260,6 +291,9 @@ export function Gantt({
               <TaskRow
                 key={taskId}
                 task={task}
+                categoryColour={colourFor.get(categoryOf.get(taskId) ?? '') ?? null}
+                dimmed={focusCategory !== null && categoryOf.get(taskId) !== focusCategory}
+                colourBy={colourBy}
                 previewTask={preview?.tasks[taskId] ?? null}
                 baselineTask={baseline?.tasks[taskId] ?? null}
                 y={y}
@@ -285,6 +319,9 @@ export function Gantt({
 
 interface RowProps {
   task: ScheduledTask
+  categoryColour: { hex: string; stripe: string } | null
+  dimmed: boolean
+  colourBy: 'critical' | 'category'
   previewTask: ScheduledTask | null
   baselineTask: Baseline['tasks'][string] | null
   y: number
@@ -305,6 +342,9 @@ interface RowProps {
 
 function TaskRow({
   task,
+  categoryColour,
+  dimmed,
+  colourBy,
   previewTask,
   baselineTask,
   y,
@@ -351,6 +391,21 @@ function TaskRow({
   if (task.status === 'in-progress') classes.push('in-progress')
   if (selected) classes.push('selected')
   if (blocked) classes.push('blocked')
+  // Faded, not hidden. Focusing on one trade should still show what runs
+  // before and after it — that context is most of the answer to "where do I
+  // fit", and hiding the rest answers a different question.
+  if (dimmed) classes.push('dimmed')
+
+  /*
+   * In category mode the fill is overridden inline, because the colour is data
+   * rather than a stylesheet decision. Completed work keeps its grey either
+   * way: it is finished, and colouring it by trade would draw the eye to work
+   * nobody needs to look at.
+   */
+  const categoryFill =
+    colourBy === 'category' && categoryColour && task.status !== 'complete'
+      ? categoryColour.hex
+      : undefined
 
   return (
     <g className="row" onClick={() => onSelect(task.id)} data-task={task.id}>
@@ -429,8 +484,26 @@ function TaskRow({
             rx={3}
             className={classes.join(' ')}
             onPointerDown={(e) => onPointerDown(e, task.id, 'move', task.earlyStart)}
-            style={{ cursor: 'grab' }}
+            style={categoryFill ? { cursor: 'grab', fill: categoryFill } : { cursor: 'grab' }}
           />
+
+          {/*
+            The category stripe, always on whichever colour mode is active.
+            Two pixels at the leading edge: enough to scan a column of bars and
+            see which trade owns what, too small to compete with the critical
+            path for attention.
+          */}
+          {categoryColour && !task.isMilestone && (
+            <rect
+              x={x}
+              y={barY}
+              width={2.5}
+              height={BAR_HEIGHT}
+              className={'bar-stripe' + (dimmed ? ' dimmed' : '')}
+              style={{ fill: categoryColour.stripe }}
+              pointerEvents="none"
+            />
+          )}
           {/*
             Resize handles sit on top of the bar at each end. They are invisible
             but wide enough to hit, and they stop propagation so grabbing an edge

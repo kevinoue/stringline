@@ -107,6 +107,7 @@ export interface TaskDetail {
   name: string
   durationDays: number
   phaseId: string | null
+  categoryId: string | null
   constraintType: ConstraintType
   constraintDate: IsoDate | null
   actualStart: IsoDate | null
@@ -130,6 +131,23 @@ export interface Phase {
   sortOrder: number
   /** Phases are the level a client is meant to see, so they default to visible. */
   visibility: 'internal' | 'client'
+}
+
+/**
+ * The trade, department or crew a task belongs to.
+ *
+ * Company-scoped, unlike a phase: the stages of a job belong to that job, but
+ * your trades are the same on every one. `colour` is a palette key, never a
+ * hex value — see `gantt/palette.ts`.
+ */
+export interface Category {
+  id: string
+  name: string
+  description: string | null
+  colour: string
+  sortOrder: number
+  kind?: string
+  taskCount?: number
 }
 
 export interface MutationResult {

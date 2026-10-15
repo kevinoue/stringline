@@ -39,6 +39,10 @@ you, in a sentence.**
   accept the consequence.
 - **Templates** — including seasonal hotel closedown and reopening, which nothing else ships.
   Save any project as a template.
+- **Trades and departments** — tag each task with who owns it, then focus the chart on one:
+  theirs stays solid, everyone else's fades but stays visible, because "where does my work sit"
+  is answered by the work around it. Colours come from a fixed palette with no red in it — the
+  critical path owns red. Print one trade's sheet to hand to them.
 - **Printing** — the task list and chart on Letter, Legal, 11×17, A4 or A3, landscape or
   portrait, with an editable title block and an optional plain-English cover sheet. The whole
   project is fitted to the sheet width; rows that overflow carry the title block and date axis

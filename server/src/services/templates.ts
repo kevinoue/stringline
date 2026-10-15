@@ -11,6 +11,7 @@
  */
 
 import type { PoolClient } from 'pg'
+import { nextColour } from './palette.js'
 
 export interface TemplateSummary {
   id: string
@@ -82,11 +83,15 @@ export async function saveProjectAsTemplate(
   // Keys are derived from the task id so they are unique and stable; the name
   // is not safe to key on, because duplicates are legal and common.
   await client.query(
-    `INSERT INTO template_tasks (template_id, key, name, duration_days, phase_name, sort_order, visibility)
+    `INSERT INTO template_tasks
+       (template_id, key, name, duration_days, phase_name, category_name, sort_order, visibility)
      SELECT $1, 't_' || REPLACE(t.id::text, '-', ''), t.name, t.duration_days,
-            p.name, t.sort_order, t.visibility
+            p.name, c.name, t.sort_order, t.visibility
      FROM tasks t
      LEFT JOIN phases p ON p.id = t.phase_id
+     -- By name, not by id: a template outlives the project it came from, and
+     -- may be used by a company whose category ids are different.
+     LEFT JOIN categories c ON c.id = t.category_id
      WHERE t.project_id = $2`,
     [templateId, projectId],
   )
@@ -148,10 +153,11 @@ export async function createProjectFromTemplate(
     name: string
     duration_days: number
     phase_name: string | null
+    category_name: string | null
     sort_order: number
     visibility: string
   }>(
-    `SELECT key, name, duration_days, phase_name, sort_order, visibility
+    `SELECT key, name, duration_days, phase_name, category_name, sort_order, visibility
      FROM template_tasks WHERE template_id = $1 ORDER BY sort_order`,
     [templateId],
   )
@@ -170,6 +176,46 @@ export async function createProjectFromTemplate(
     phaseIds.set(phaseName, row.rows[0]!.id)
   }
 
+  /*
+   * Categories are reused, not recreated.
+   *
+   * Unlike phases, which belong to one project, a company's trades are the
+   * same on every job — so a second project from the same template must land
+   * on the company's existing "Electrical" rather than making a duplicate.
+   * The unique index on (company_id, kind, name) is what makes this safe, and
+   * ON CONFLICT is what makes it a single round trip.
+   *
+   * Colours are assigned in palette order as new trades appear, so a company's
+   * first few are the most distinguishable without anyone choosing.
+   */
+  const categoryIds = new Map<string, string>()
+  const categoryNames: string[] = []
+  for (const t of templateTasks.rows) {
+    if (t.category_name && !categoryNames.includes(t.category_name)) {
+      categoryNames.push(t.category_name)
+    }
+  }
+  if (categoryNames.length > 0) {
+    const { rows: taken } = await client.query<{ colour: string }>(
+      `SELECT colour FROM categories WHERE company_id = $1 AND kind = 'trade'`,
+      [companyId],
+    )
+    const used = taken.map((c) => c.colour)
+    for (const name of categoryNames) {
+      const row = await client.query<{ id: string; colour: string }>(
+        `INSERT INTO categories (company_id, kind, name, colour, sort_order)
+         VALUES ($1, 'trade', $2, $3,
+                 COALESCE((SELECT MAX(sort_order) + 1 FROM categories
+                            WHERE company_id = $1 AND kind = 'trade'), 0))
+         ON CONFLICT (company_id, kind, name) DO UPDATE SET name = EXCLUDED.name
+         RETURNING id, colour`,
+        [companyId, name, nextColour(used)],
+      )
+      categoryIds.set(name, row.rows[0]!.id)
+      used.push(row.rows[0]!.colour)
+    }
+  }
+
   // Inserted one at a time, deliberately. A bulk insert would be faster, but
   // Postgres does not guarantee that `RETURNING` comes back in the order the
   // rows went in, so pairing new ids to template keys by position would be
@@ -179,11 +225,13 @@ export async function createProjectFromTemplate(
   const keyToId = new Map<string, string>()
   for (const t of templateTasks.rows) {
     const row = await client.query<{ id: string }>(
-      `INSERT INTO tasks (project_id, phase_id, name, duration_days, sort_order, visibility)
-       VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
+      `INSERT INTO tasks (project_id, phase_id, category_id, name, duration_days,
+                          sort_order, visibility)
+       VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
       [
         projectId,
         t.phase_name ? phaseIds.get(t.phase_name)! : null,
+        t.category_name ? categoryIds.get(t.category_name)! : null,
         t.name,
         t.duration_days,
         t.sort_order,

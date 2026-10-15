@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Attachments } from './Attachments.js'
 import type {
+  Category,
   ConstraintType,
   Dependency,
   Phase,
@@ -15,6 +16,9 @@ interface Props {
   schedule: Schedule
   dependencies: Dependency[]
   phases: Phase[]
+  categories: Category[]
+  /** What this company calls the dimension — Trade, Department, Crew. */
+  categoryLabel: string
   busy: boolean
   onSave(patch: Record<string, unknown>): void
   /** Create a phase inline and return it, so a task can be filed without leaving. */
@@ -46,6 +50,8 @@ export function TaskPanel({
   schedule,
   dependencies,
   phases,
+  categories,
+  categoryLabel,
   busy,
   onSave,
   onCreatePhase,
@@ -64,6 +70,7 @@ export function TaskPanel({
     detail.percentComplete === null ? '' : String(detail.percentComplete),
   )
   const [phaseId, setPhaseId] = useState<string | null>(detail.phaseId)
+  const [categoryId, setCategoryId] = useState<string | null>(detail.categoryId)
   const [newPred, setNewPred] = useState('')
   const [newType, setNewType] = useState('FS')
   const [newLag, setNewLag] = useState('0')
@@ -87,6 +94,7 @@ export function TaskPanel({
     setActualFinish(detail.actualFinish ?? '')
     setPercent(detail.percentComplete === null ? '' : String(detail.percentComplete))
     setPhaseId(detail.phaseId)
+    setCategoryId(detail.categoryId)
     setNewPred('')
   }, [detail.id])
 
@@ -109,6 +117,7 @@ export function TaskPanel({
       actualFinish: actualFinish || null,
       percentComplete: percent === '' ? null : Number(percent),
       phaseId,
+      categoryId,
     }
     onSave(patch)
   }
@@ -141,6 +150,23 @@ export function TaskPanel({
         {/* Phases arrived with templates and could never be set by hand, so a
             blank project could not have them at all. They are also what lets
             the chart roll up into a handful of bars on a small screen. */}
+        {/* Who owns it, next to when it happens. The two are the axes a
+            schedule is read along, and they belong together. */}
+        <label>
+          {categoryLabel}
+          <select
+            value={categoryId ?? ''}
+            onChange={(e) => setCategoryId(e.target.value || null)}
+          >
+            <option value="">None</option>
+            {categories.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+              </option>
+            ))}
+          </select>
+        </label>
+
         <label>
           Phase
           <select

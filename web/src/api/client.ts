@@ -1,6 +1,7 @@
 import type {
   Attachment,
   Baseline,
+  Category,
   Dependency,
   HistoryEntry,
   Invite,
@@ -223,8 +224,35 @@ export const api = {
       dependencies: Dependency[]
       details: TaskDetail[]
       phases: Phase[]
+      categories: Category[]
       project: ScheduleProject
     }>('GET', `/projects/${projectId}/schedule`),
+
+  // ── Categories ────────────────────────────────────────────────────────────
+  // Company-scoped, so these are not under /projects. Labelling work does not
+  // reschedule it, so none of them return a MutationResult.
+
+  listCategories: () =>
+    request<{
+      categories: Category[]
+      palette: Array<{ key: string; label: string; hex: string; stripe: string }>
+      /** What this company calls the dimension — Trade, Department, Crew. */
+      label: string
+    }>('GET', '/categories'),
+
+  createCategory: (body: { name: string; description?: string; colour?: string }) =>
+    request<{ category: Category }>('POST', '/categories', body),
+
+  updateCategory: (
+    id: string,
+    changes: { name?: string; description?: string; colour?: string; sortOrder?: number },
+  ) => request<{ category: Category }>('PATCH', `/categories/${id}`, changes),
+
+  deleteCategory: (id: string) =>
+    request<{ untaggedTasks: number }>('DELETE', `/categories/${id}`),
+
+  setCategoryLabel: (label: string) =>
+    request<{ label: string }>('PUT', '/categories/label', { label }),
 
   // ── Phases ────────────────────────────────────────────────────────────────
   // Grouping only — none of these move a date, so none return a MutationResult.

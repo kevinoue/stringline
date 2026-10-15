@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 import { api, ApiError } from '../api/client.js'
 import type {
   Baseline,
+  Category,
   Phase,
   ProjectSummary,
   Schedule,
@@ -27,6 +28,9 @@ interface Props {
   schedule: Schedule
   details: Record<string, TaskDetail>
   phases: Phase[]
+  categories: Category[]
+  categoryOf: Map<string, string>
+  categoryLabel: string
   baseline: Baseline | null
   summary: ProjectSummary | null
   order: ScheduledTask[]
@@ -49,6 +53,9 @@ export function PrintDialog({
   schedule,
   details,
   phases,
+  categories,
+  categoryOf,
+  categoryLabel,
   baseline,
   summary,
   order,
@@ -61,6 +68,7 @@ export function PrintDialog({
   const [showDates, setShowDates] = useState(true)
   const [showSummary, setShowSummary] = useState(true)
   const [showLegend, setShowLegend] = useState(true)
+  const [onlyCategory, setOnlyCategory] = useState<string | null>(null)
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState<string | null>(null)
   /** What the server already holds, so a blur with no edit sends nothing. */
@@ -78,11 +86,16 @@ export function PrintDialog({
     showDates,
     showSummary,
     showLegend,
+    onlyCategory,
   }
 
   const geometry = geometryFor(paper, orientation)
   const perPage = rowsPerPage(geometry)
-  const sheets = Math.max(1, Math.ceil(order.length / perPage)) + (showSummary && summary ? 1 : 0)
+  // Has to reflect the filter, or the sheet count on screen is a lie.
+  const printedRows = onlyCategory
+    ? order.filter((t) => categoryOf.get(t.id) === onlyCategory).length
+    : order.length
+  const sheets = Math.max(1, Math.ceil(printedRows / perPage)) + (showSummary && summary ? 1 : 0)
 
   // Span, not the padded screen timeline: this is how many days of real project
   // have to fit between the task column and the right margin.
@@ -197,6 +210,29 @@ export function PrintDialog({
             {saved && <strong> Saved.</strong>}
           </p>
 
+          {categories.length > 0 && (
+            <label>
+              Print only
+              <select
+                value={onlyCategory ?? ''}
+                onChange={(e) => setOnlyCategory(e.target.value || null)}
+              >
+                <option value="">The whole schedule</option>
+                {categories.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name} only
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+          {onlyCategory && (
+            <p className="hint">
+              One {categoryLabel.toLowerCase()}&apos;s work, for handing to them. The title block
+              says so, in case the sheet travels without you.
+            </p>
+          )}
+
           <div className="print-toggles">
             <label className="checkbox">
               <input
@@ -226,7 +262,7 @@ export function PrintDialog({
           </div>
 
           <p className="hint">
-            {sheets} {sheets === 1 ? 'sheet' : 'sheets'} · {order.length} tasks ·{' '}
+            {sheets} {sheets === 1 ? 'sheet' : 'sheets'} · {printedRows} tasks ·{' '}
             {perPage} per sheet · whole project fits the width
             {isDense(dayWidth) && (
               // Not blocked. Someone printing a two-year programme as a
@@ -274,6 +310,8 @@ export function PrintDialog({
             schedule={schedule}
             details={details}
             phases={phases}
+            categories={categories}
+            categoryOf={categoryOf}
             baseline={baseline}
             summary={summary}
             order={order}

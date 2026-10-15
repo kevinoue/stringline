@@ -1,12 +1,14 @@
 import { createTimeline, weekendBands, type Timeline } from '../gantt/timeline.js'
 import type {
   Baseline,
+  Category,
   Phase,
   ProjectSummary,
   Schedule,
   ScheduledTask,
   TaskDetail,
 } from '../api/types.js'
+import { PALETTE } from '../gantt/palette.js'
 import { geometryFor, PRINT, rowsPerPage, type Orientation, type PaperSize } from './paper.js'
 
 const HEALTH_LABEL: Record<string, string> = {
@@ -18,6 +20,14 @@ const HEALTH_LABEL: Record<string, string> = {
 
 export interface PrintOptions {
   paper: PaperSize
+  /**
+   * Print only one category's work, or null for all.
+   *
+   * This is the sheet you hand a subcontractor: their rows, their dates, and
+   * nothing they have to read past. The title block says which filter is on,
+   * so a partial schedule can never be mistaken for the whole job.
+   */
+  onlyCategory: string | null
   orientation: Orientation
   title: string
   subtitle: string
@@ -31,6 +41,9 @@ interface Props {
   schedule: Schedule
   details: Record<string, TaskDetail>
   phases: Phase[]
+  categories: Category[]
+  /** Task id -> category id. */
+  categoryOf: Map<string, string>
   baseline: Baseline | null
   summary: ProjectSummary | null
   /** Screen row order, so paper and screen agree. */
@@ -56,6 +69,8 @@ export function PrintView({
   schedule,
   details,
   phases,
+  categories,
+  categoryOf,
   baseline,
   summary,
   order,
@@ -81,9 +96,24 @@ export function PrintView({
     { pad: false, clamp: false },
   )
 
+  const only = options.onlyCategory
+  const rows = only ? order.filter((t) => categoryOf.get(t.id) === only) : order
+  const onlyName = only ? (categories.find((c) => c.id === only)?.name ?? null) : null
+
   const pages: ScheduledTask[][] = []
-  for (let i = 0; i < order.length; i += perPage) pages.push(order.slice(i, i + perPage))
+  for (let i = 0; i < rows.length; i += perPage) pages.push(rows.slice(i, i + perPage))
   if (pages.length === 0) pages.push([])
+
+  // Palette key -> printed colours, for the stripe beside each bar.
+  const byKey = new Map(PALETTE.map((p) => [p.key, p]))
+  const colourFor = new Map(
+    categories.map((c) => [c.id, byKey.get(c.colour) ?? byKey.get('slate')!]),
+  )
+  const stripes = new Map<string, string>()
+  for (const task of rows) {
+    const colour = colourFor.get(categoryOf.get(task.id) ?? '')
+    if (colour) stripes.set(task.id, colour.stripe)
+  }
 
   const phaseName = new Map(phases.map((p) => [p.id, p.name]))
   const printedOn = new Date().toISOString().slice(0, 10)
@@ -94,6 +124,11 @@ export function PrintView({
       <div className="print-titleblock-main">
         <h1>{options.title}</h1>
         {options.subtitle && <p className="print-subtitle">{options.subtitle}</p>}
+        {onlyName && (
+          <p className="print-filter">
+            {onlyName} only — this is part of a larger schedule
+          </p>
+        )}
       </div>
       <dl className="print-titleblock-meta">
         <div>
@@ -199,7 +234,7 @@ export function PrintView({
         </section>
       )}
 
-      {pages.map((rows, pageIndex) => (
+      {pages.map((pageRows, pageIndex) => (
         <section
           key={pageIndex}
           className="print-page"
@@ -227,13 +262,17 @@ export function PrintView({
             <Axis timeline={timeline} height={PRINT.axisHeight} width={chartWidth} />
 
             <div className="print-table">
-              {rows.map((task) => {
+              {pageRows.map((task) => {
                 const detail = details[task.id]
                 const phase = detail?.phaseId ? phaseName.get(detail.phaseId) : null
                 return (
                   <div
                     key={task.id}
                     className={'print-row' + (task.isCritical ? ' critical' : '')}
+                    // Carried in the DOM rather than inferred from the row's
+                    // text, which shows the phase. Lets a filtered sheet be
+                    // checked precisely rather than by reading names.
+                    data-category={categoryOf.get(task.id) ?? ''}
                     style={{ height: PRINT.rowHeight }}
                   >
                     <span className="print-col-name" title={task.name}>
@@ -257,9 +296,10 @@ export function PrintView({
             <Chart
               timeline={timeline}
               width={chartWidth}
-              rows={rows}
+              rows={pageRows}
               baseline={baseline}
               rowHeight={PRINT.rowHeight}
+              stripes={stripes}
             />
           </div>
 
@@ -332,12 +372,15 @@ function Chart({
   rows,
   baseline,
   rowHeight,
+  stripes,
 }: {
   timeline: Timeline
   width: number
   rows: ScheduledTask[]
   baseline: Baseline | null
   rowHeight: number
+  /** Task id -> stripe colour, already resolved from the palette. */
+  stripes: Map<string, string>
 }) {
   const height = rows.length * rowHeight
   const barHeight = rowHeight - 7
@@ -391,7 +434,21 @@ function Chart({
                 className={task.isCritical ? 'print-milestone critical' : 'print-milestone'}
               />
             ) : (
-              <rect x={x} y={y + 3} width={w} height={barHeight} className={classes.join(' ')} />
+              <>
+                <rect x={x} y={y + 3} width={w} height={barHeight} className={classes.join(' ')} />
+                {/* Which trade owns it. Printed as a solid edge rather than a
+                    fill, so the critical path keeps its monopoly on colour
+                    even on paper. */}
+                {stripes.get(task.id) && (
+                  <rect
+                    x={x}
+                    y={y + 3}
+                    width={2}
+                    height={barHeight}
+                    style={{ fill: stripes.get(task.id)! }}
+                  />
+                )}
+              </>
             )}
           </g>
         )

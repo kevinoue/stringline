@@ -6,6 +6,7 @@ import { migrate } from './db/migrate.js'
 import { closePool, pool } from './db/pool.js'
 import authRoutes from './routes/auth.js'
 import attachmentRoutes from './routes/attachments.js'
+import categoryRoutes from './routes/categories.js'
 import passwordResetRoutes from './routes/password-reset.js'
 import projectRoutes from './routes/projects.js'
 import setupRoutes, { setupNeeded, setupToken } from './routes/setup.js'
@@ -78,6 +79,7 @@ api.use(
   rateLimit({ windowMs: 15 * 60 * 1000, limit: 1000, standardHeaders: true, legacyHeaders: false }),
 )
 api.use('/team', teamRoutes)
+api.use('/categories', categoryRoutes)
 api.use('/projects', projectRoutes)
 api.use('/', attachmentRoutes)
 api.use('/', sseRoutes)

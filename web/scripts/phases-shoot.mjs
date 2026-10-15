@@ -43,7 +43,11 @@ await p.locator('label:has-text("Email") input').fill('kev@demo.test')
 await p.locator('label:has-text("Password") input').fill('correcthorse')
 await p.locator('button:has-text("Sign in")').click()
 await p.waitForSelector('.project-card', { timeout: 15000 })
-await p.locator('.project-card').first().click()
+// By name, not by position. Any other project in the same company — one
+// started from a template, say — sorts above the seeded one and every check
+// below then runs against the wrong data.
+const seeded = p.locator('.project-card:has-text("Stonecliffe west wing refurbishment")')
+await ((await seeded.count()) ? seeded.first() : p.locator('.project-card').first()).click()
 
 await p.waitForSelector('button:has-text("Phases")', { timeout: 15000 })
 const buttonText = (await p.locator('button:has-text("Phases")').textContent()).trim()

@@ -6,12 +6,14 @@ import type {
   Impact,
   ProjectSummary,
   Schedule,
+  Category,
   Phase,
   ScheduleProject,
   TaskDetail,
 } from './api/types.js'
 import { ImpactBanner } from './components/ImpactBanner.js'
 import { SummaryPanel } from './components/SummaryPanel.js'
+import { Categories } from './components/Categories.js'
 import { Phases } from './components/Phases.js'
 import { PrintDialog } from './print/PrintDialog.js'
 import { TaskPanel } from './components/TaskPanel.js'
@@ -40,6 +42,11 @@ export function ProjectView({ projectId, onBack }: { projectId: string; onBack()
   const [dependencies, setDependencies] = useState<Dependency[]>([])
   const [details, setDetails] = useState<Record<string, TaskDetail>>({})
   const [phases, setPhases] = useState<Phase[]>([])
+  const [categories, setCategories] = useState<Category[]>([])
+  const [categoryLabel, setCategoryLabel] = useState('Trade')
+  const [focusCategory, setFocusCategory] = useState<string | null>(null)
+  const [colourBy, setColourBy] = useState<'critical' | 'category'>('critical')
+  const [managingCategories, setManagingCategories] = useState(false)
   const [summary, setSummary] = useState<ProjectSummary | null>(null)
   const [summaryOpen, setSummaryOpen] = useState(true)
   const [dayWidth, setDayWidth] = useState<number>(ZOOM_WIDTH.day)
@@ -64,6 +71,10 @@ export function ProjectView({ projectId, onBack }: { projectId: string; onBack()
     setDependencies(data.dependencies)
     setDetails(Object.fromEntries(data.details.map((d) => [d.id, d])))
     setPhases(data.phases)
+    setCategories(data.categories)
+    // The company's word for this dimension — Trade, Department, Crew. Company
+    // -scoped, so it rides along rather than being fetched per project.
+    api.listCategories().then((r) => setCategoryLabel(r.label)).catch(() => {})
     setMeta(data.project)
     // Recomputed on every load, so it is never stale relative to the chart
     // beside it. A summary that disagrees with the bars is worse than none.
@@ -95,6 +106,23 @@ export function ProjectView({ projectId, onBack }: { projectId: string; onBack()
       )
       .map((x) => x.t.id)
   }, [schedule, details])
+
+  /** Task id -> category id, for the chart's stripe and focus. */
+  const categoryOf = useMemo(
+    () =>
+      new Map(
+        Object.values(details)
+          .filter((d) => d.categoryId)
+          .map((d) => [d.id, d.categoryId!]),
+      ),
+    [details],
+  )
+
+  // A focused category that no longer exists on this project would dim every
+  // bar with nothing left in focus, which reads as the chart having broken.
+  useEffect(() => {
+    if (focusCategory && !categories.some((c) => c.id === focusCategory)) setFocusCategory(null)
+  }, [categories, focusCategory])
 
   /** Every mutating call funnels through here so results are handled once. */
   const mutate = useCallback(
@@ -285,6 +313,44 @@ export function ProjectView({ projectId, onBack }: { projectId: string; onBack()
         <button className="ghost" onClick={() => setManagingPhases(true)}>
           Phases{phases.length ? ` (${phases.length})` : ''}
         </button>
+        {/*
+          Focus, not filter. Picking a trade leaves everyone else's bars on
+          screen but faded, because "where does my work sit" is answered by the
+          work around it — hiding the rest answers a different question.
+        */}
+        {categories.length > 0 && (
+          <select
+            className="focus-picker"
+            value={focusCategory ?? ''}
+            onChange={(e) => setFocusCategory(e.target.value || null)}
+            title="Fade everything except one trade"
+          >
+            <option value="">All {categoryLabel.toLowerCase()}s</option>
+            {categories.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+              </option>
+            ))}
+          </select>
+        )}
+        {categories.length > 0 && (
+          <button
+            className="ghost"
+            onClick={() => setColourBy((m) => (m === 'critical' ? 'category' : 'critical'))}
+            title={
+              colourBy === 'critical'
+                ? `Colour bars by ${categoryLabel.toLowerCase()} instead of the critical path`
+                : 'Go back to colouring the critical path'
+            }
+          >
+            {colourBy === 'critical'
+              ? `Colour by ${categoryLabel.toLowerCase()}`
+              : 'Colour by critical path'}
+          </button>
+        )}
+        <button className="ghost" onClick={() => setManagingCategories(true)}>
+          {categoryLabel}s{categories.length ? ` (${categories.length})` : ''}
+        </button>
         <button className="ghost" onClick={() => setPrinting(true)}>
           Print
         </button>
@@ -458,8 +524,14 @@ export function ProjectView({ projectId, onBack }: { projectId: string; onBack()
           height={chartHeight}
           scrollTop={scrollTop}
           onScroll={setScrollTop}
+          categoryOf={categoryOf}
+          focusCategory={focusCategory}
         />
         <Gantt
+          categoryOf={categoryOf}
+          categories={categories}
+          focusCategory={focusCategory}
+          colourBy={colourBy}
           schedule={schedule}
           baseline={baseline}
           dependencies={dependencies}
@@ -485,12 +557,24 @@ export function ProjectView({ projectId, onBack }: { projectId: string; onBack()
             schedule={schedule}
             details={details}
             phases={phases}
+            categories={categories}
+            categoryOf={categoryOf}
+            categoryLabel={categoryLabel}
             baseline={baseline}
             summary={summary}
             // The same row order the screen uses, so paper and screen agree.
             order={order.map((id) => schedule.tasks[id]!)}
             onClose={() => {
               setPrinting(false)
+              void load()
+            }}
+          />
+        )}
+        {managingCategories && (
+          <Categories
+            onChanged={() => void load()}
+            onClose={() => {
+              setManagingCategories(false)
               void load()
             }}
           />
@@ -511,6 +595,8 @@ export function ProjectView({ projectId, onBack }: { projectId: string; onBack()
             schedule={schedule}
             dependencies={dependencies}
             phases={phases}
+            categories={categories}
+            categoryLabel={categoryLabel}
             busy={busy}
             onCreatePhase={async (name) => {
               try {

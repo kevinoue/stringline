@@ -581,6 +581,14 @@ button.danger:hover:not(:disabled) { background: #fdf0ee; }
   }
   .print-subtitle { margin: 2px 0 0; font-size: 9pt; color: #444; }
 
+  /* Says a filter is on. Without it a one-trade sheet is indistinguishable
+     from the whole job, which is how someone ends up planning around a
+     schedule that is missing two thirds of the work. */
+  .print-filter {
+    margin: 3px 0 0; font-size: 7.5pt; font-weight: 600;
+    text-transform: uppercase; letter-spacing: 0.06em; color: #8a5c1c;
+  }
+
   .print-titleblock-meta {
     display: flex; gap: 14px; margin: 0; flex-shrink: 0;
   }
@@ -718,3 +726,44 @@ button.danger:hover:not(:disabled) { background: #fdf0ee; }
 .new-project .field span {
   font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--ink-soft);
 }
+
+/* ── Categories ───────────────────────────────────────────────────────────── */
+
+/* Focusing fades the rest rather than hiding it: a foreman wants their work
+   in context, with what runs before and after still legible. */
+.bar.dimmed { opacity: 0.18; }
+.bar-stripe.dimmed { opacity: 0.18; }
+/* The list fades with the chart. Dimming only the bars leaves the names at
+   full strength, so the left-hand column still reads as "everything" and you
+   cannot scan it for whose work is whose. Lighter than the bars because text
+   at 18% is unreadable rather than merely quiet. */
+.table-row.dimmed { opacity: 0.32; }
+
+/* The toolbar carries a lot now. Wrapping to a second row is far better than
+   squeezing a three-word button into three lines, which is what flex does by
+   default. */
+.toolbar { flex-wrap: wrap; row-gap: 8px; }
+.toolbar button { white-space: nowrap; }
+
+.focus-picker {
+  font: inherit; font-size: 13px; padding: 5px 8px;
+  border: 1px solid var(--line-strong); border-radius: var(--radius);
+  background: var(--panel); max-width: 170px;
+}
+
+/* The palette, inline in each row. Ten swatches fit, so choosing a colour is
+   one click rather than opening a picker. */
+.swatch-cell { width: 128px; }
+.swatches { display: grid; grid-template-columns: repeat(5, 1fr); gap: 3px; width: 112px; }
+.swatch-btn {
+  width: 20px; height: 14px; padding: 0;
+  border: 1px solid rgba(0, 0, 0, 0.12); border-radius: 3px; cursor: pointer;
+}
+.swatch-btn:hover:not(:disabled) { outline: 1px solid var(--ink-soft); outline-offset: 1px; }
+/* A ring rather than a tick: a tick would need a contrasting colour that works
+   on all ten swatches, and there isn't one. */
+.swatch-btn.chosen {
+  outline: 2px solid var(--ink); outline-offset: 1px;
+}
+
+.label-edit input { font: inherit; font-size: 12px; padding: 2px 6px; width: 130px; }

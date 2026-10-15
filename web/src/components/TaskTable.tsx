@@ -12,6 +12,15 @@ interface Props {
   height: number
   scrollTop: number
   onScroll(top: number): void
+  /**
+   * Task id -> category id, and which category is focused.
+   *
+   * The list dims with the chart. Fading only the bars leaves the names at
+   * full strength, so scanning the left-hand column you still cannot tell
+   * whose work is whose — which is most of what focusing is for.
+   */
+  categoryOf: Map<string, string>
+  focusCategory: string | null
 }
 
 /** Working days a task has slipped against the baseline, or null if unbaselined. */
@@ -35,6 +44,8 @@ export function TaskTable({
   height,
   scrollTop,
   onScroll,
+  categoryOf,
+  focusCategory,
 }: Props) {
   const tableRef = useRef<HTMLDivElement>(null)
   const bodyRef = useRef<HTMLDivElement>(null)
@@ -143,7 +154,11 @@ export function TaskTable({
           return (
             <div
               key={id}
-              className={`table-row${selectedId === id ? ' selected' : ''}${task.isCritical ? ' critical' : ''}`}
+              className={
+                `table-row${selectedId === id ? ' selected' : ''}` +
+                `${task.isCritical ? ' critical' : ''}` +
+                `${focusCategory && categoryOf.get(id) !== focusCategory ? ' dimmed' : ''}`
+              }
               style={{ height: ROW_HEIGHT }}
               onClick={() => onSelect(id)}
             >

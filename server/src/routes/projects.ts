@@ -432,6 +432,7 @@ router.get('/:projectId/schedule', async (req: Request, res: Response) => {
       // needing a second round trip every time a row is selected.
       const details = await client.query(
         `SELECT id, name, duration_days AS "durationDays", phase_id AS "phaseId",
+                category_id AS "categoryId",
                 constraint_type AS "constraintType",
                 constraint_date::text AS "constraintDate",
                 actual_start::text    AS "actualStart",
@@ -451,6 +452,18 @@ router.get('/:projectId/schedule', async (req: Request, res: Response) => {
            FROM phases WHERE project_id = $1 ORDER BY sort_order, name`,
         [param(req, 'projectId')],
       )
+
+      // Only the categories actually used by this project, not the company's
+      // whole list. The chart's legend and filter should offer the trades on
+      // this job, not every trade the company has ever defined.
+      const categories = await client.query(
+        `SELECT DISTINCT c.id, c.name, c.colour, c.description, c.sort_order AS "sortOrder"
+           FROM categories c
+           JOIN tasks t ON t.category_id = c.id
+          WHERE t.project_id = $1
+          ORDER BY c.sort_order, c.name`,
+        [param(req, 'projectId')],
+      )
       // The printed title block comes from here rather than a second request,
       // so what is printed can never disagree with the chart beside it.
       const meta = await client.query(
@@ -466,6 +479,7 @@ router.get('/:projectId/schedule', async (req: Request, res: Response) => {
         dependencies: dependencies.rows,
         details: details.rows,
         phases: phases.rows,
+        categories: categories.rows,
         project: meta.rows[0],
       }
     })
@@ -756,6 +770,7 @@ const UPDATABLE: Record<string, string> = {
   name: 'name',
   durationDays: 'duration_days',
   phaseId: 'phase_id',
+  categoryId: 'category_id',
   calendarId: 'calendar_id',
   constraintType: 'constraint_type',
   constraintDate: 'constraint_date',
@@ -783,6 +798,25 @@ router.patch(
     try {
       const payload = await transaction(async (client) => {
         if (!(await ownsProject(client, projectId, req.company!.id))) return null
+
+        /*
+         * `category_id` points at a company-scoped table, so owning the
+         * project is not enough — without this, one company could tag its own
+         * task with another company's category and pull that company's name
+         * and colour straight into its chart, because the schedule payload
+         * joins categories through tasks. The foreign key happily allows it.
+         *
+         * `phase_id` needs no equivalent check: phases belong to a project,
+         * and the project has already been proven to belong to the caller.
+         */
+        const categoryUpdate = updates.find(([key]) => key === 'categoryId')
+        if (categoryUpdate && categoryUpdate[1] !== null) {
+          const { rows } = await client.query(
+            'SELECT 1 FROM categories WHERE id = $1 AND company_id = $2',
+            [categoryUpdate[1], req.company!.id],
+          )
+          if (rows.length === 0) return { rejected: 'Unknown category' as const }
+        }
 
         const before = await client.query<Record<string, unknown>>(
           `SELECT ${updates.map(([k]) => UPDATABLE[k]).join(', ')} FROM tasks
@@ -818,6 +852,12 @@ router.patch(
 
       if (!payload) {
         res.status(404).json({ error: 'Task not found' })
+        return
+      }
+      if ('rejected' in payload) {
+        // 404 rather than 403: the caller has no business knowing whether
+        // that id exists in some other company.
+        res.status(404).json({ error: payload.rejected })
         return
       }
       broadcast(projectId, 'schedule.changed', { finishAfter: payload.finishAfter })
