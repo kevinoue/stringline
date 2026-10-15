@@ -207,6 +207,15 @@ export const api = {
     changes: { name?: string; printTitle?: string; printSubtitle?: string },
   ) => request<{ project: Project }>('PATCH', `/projects/${projectId}`, changes),
 
+  /**
+   * Move the whole project, or change its deadline.
+   *
+   * Separate from `updateProject` because it moves dates: the reply carries
+   * the impact banner, like every other change that shifts a schedule.
+   */
+  reschedule: (projectId: string, changes: { startDate?: string; deadline?: string | null }) =>
+    request<MutationResult>('POST', `/projects/${projectId}/reschedule`, changes),
+
   getSchedule: (projectId: string) =>
     request<{
       schedule: Schedule

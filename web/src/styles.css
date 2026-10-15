@@ -700,3 +700,21 @@ button.danger:hover:not(:disabled) { background: #fdf0ee; }
     margin: 0 0 9px; font-size: 9.5pt; line-height: 1.5; color: #333;
   }
 }
+
+/* The project start, editable from the toolbar. Styled to read as a value
+   rather than a form field — it sits beside the completion date, which is
+   computed, and the two should look like siblings. */
+.start-date {
+  font-family: var(--mono); font-size: 14px;
+  padding: 2px 4px; border-color: transparent; background: transparent;
+}
+.start-date:hover:not(:disabled) { border-color: var(--line-strong); background: var(--panel); }
+.start-date:focus { border-color: var(--ink-soft); background: var(--panel); }
+
+/* An inline labelled field for the new-project row. The start date used to be
+   a bare date box next to the name, which reads as decoration — and it is the
+   date the whole schedule hangs off. */
+.new-project .field { display: flex; align-items: center; gap: 6px; }
+.new-project .field span {
+  font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--ink-soft);
+}

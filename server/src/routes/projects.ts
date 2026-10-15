@@ -243,7 +243,18 @@ router.delete('/templates/:templateId', requirePlanner, async (req: Request, res
  */
 router.patch('/:projectId', requirePlanner, async (req: Request, res: Response) => {
   const projectId = param(req, 'projectId')
-  const { name, printTitle, printSubtitle } = req.body ?? {}
+  const { name, printTitle, printSubtitle, startDate, deadline } = req.body ?? {}
+
+  // Pointed somewhere useful rather than just refused. Someone sending a date
+  // here is trying to do a real thing; telling them where it lives beats a
+  // bare "Nothing to change".
+  if (startDate !== undefined || deadline !== undefined) {
+    res.status(400).json({
+      error: 'Dates move the schedule. Use POST /projects/:id/reschedule, which explains the impact.',
+      code: 'USE_RESCHEDULE',
+    })
+    return
+  }
 
   if (name === undefined && printTitle === undefined && printSubtitle === undefined) {
     res.status(400).json({ error: 'Nothing to change' })
@@ -290,6 +301,92 @@ router.patch('/:projectId', requirePlanner, async (req: Request, res: Response) 
     res.json({ project })
   } catch (error) {
     handleError(res, error, 'update-project')
+  }
+})
+
+/**
+ * Move the whole project, or change its deadline.
+ *
+ * The project start is the date every unconstrained task hangs off, so this is
+ * the single most load-bearing input a project has — and until now it was
+ * write-once, set when the project was created and never changeable. A
+ * template started on the wrong day could only be deleted and started again.
+ *
+ * Separate from `PATCH /:projectId` because this moves dates, and everything
+ * that moves a date goes through `applyAndExplain`: the reply carries the
+ * impact banner and `change_log` gets a row. Pushing a job back three weeks is
+ * exactly the kind of change someone should see the consequence of.
+ */
+router.post('/:projectId/reschedule', requirePlanner, async (req: Request, res: Response) => {
+  const projectId = param(req, 'projectId')
+  const { startDate, deadline } = req.body ?? {}
+
+  if (startDate === undefined && deadline === undefined) {
+    res.status(400).json({ error: 'startDate or deadline is required' })
+    return
+  }
+  const ISO = /^\d{4}-\d{2}-\d{2}$/
+  if (startDate !== undefined && !ISO.test(String(startDate))) {
+    res.status(400).json({ error: 'startDate must be YYYY-MM-DD' })
+    return
+  }
+  // null clears a deadline, which is a real thing to want — a job can lose its
+  // contractual end date without losing its plan.
+  if (deadline !== undefined && deadline !== null && !ISO.test(String(deadline))) {
+    res.status(400).json({ error: 'deadline must be YYYY-MM-DD, or null to clear it' })
+    return
+  }
+
+  try {
+    const payload = await transaction(async (client) => {
+      if (!(await ownsProject(client, projectId, req.company!.id))) return null
+
+      const { rows } = await client.query<{ start_date: string; deadline: string | null }>(
+        'SELECT start_date::text AS start_date, deadline::text AS deadline FROM projects WHERE id = $1',
+        [projectId],
+      )
+      const before = rows[0]!
+
+      return applyAndExplain(
+        client,
+        {
+          projectId,
+          actorId: req.user!.id,
+          action: startDate !== undefined ? 'project.start' : 'project.deadline',
+          field: startDate !== undefined ? 'start_date' : 'deadline',
+          oldValue: startDate !== undefined ? before.start_date : before.deadline,
+          newValue: startDate !== undefined ? String(startDate) : String(deadline ?? ''),
+        },
+        async () => {
+          await client.query(
+            `UPDATE projects
+                SET start_date = COALESCE($2, start_date),
+                    deadline   = CASE WHEN $3::boolean THEN $4 ELSE deadline END,
+                    updated_at = NOW()
+              WHERE id = $1`,
+            [
+              projectId,
+              startDate ?? null,
+              deadline !== undefined,
+              deadline ?? null,
+            ],
+          )
+        },
+      )
+    })
+
+    if (!payload) {
+      res.status(404).json({ error: 'Project not found' })
+      return
+    }
+    broadcast(projectId, 'schedule.changed', { finishAfter: payload.finishAfter })
+    res.json({
+      schedule: payload.result,
+      impact: payload.impact,
+      finishMovedDays: payload.finishMovedDays,
+    })
+  } catch (error) {
+    handleError(res, error, 'reschedule')
   }
 })
 

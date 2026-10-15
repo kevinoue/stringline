@@ -169,5 +169,71 @@ check("an empty change is rejected", status == 400, f"got {status}")
 status, out = call("PATCH", f"/projects/{pid}", {"deadline": "2027-01-01"})
 check("a date change is not silently accepted here", status == 400, f"got {status}")
 
+print("\n== moving the whole project ==")
+# The case this exists for: a template started on the wrong day. Project start
+# was write-once until now, so the only remedy was to delete and start again.
+_, tpl = call("GET", "/projects/templates")
+closedown = next((t for t in tpl["templates"] if "closedown" in t["name"].lower()), None)
+if closedown:
+    _, made = call("POST", "/projects/from-template", {
+        "templateId": closedown["id"], "name": "Winter closedown",
+        "startDate": "2026-10-15"})
+    cid = made["projectId"]
+
+    _, before = call("GET", f"/projects/{cid}/schedule")
+    first_before = min(t["earlyStart"] for t in before["schedule"]["tasks"].values())
+    finish_before = before["schedule"]["projectFinish"]
+    check("the template started on the date it was given",
+          first_before == "2026-10-15", first_before)
+
+    status, out = call("POST", f"/projects/{cid}/reschedule", {"startDate": "2026-10-26"})
+    check("the project start can be moved", status == 200, f"got {status}")
+
+    sched = out["schedule"]
+    first_after = min(t["earlyStart"] for t in sched["tasks"].values())
+    check("the first task moves to the new start",
+          first_after == "2026-10-26", first_after)
+
+    # The whole point of the question: does everything downstream follow?
+    moved = sum(1 for tid, t in sched["tasks"].items()
+                if t["earlyStart"] != before["schedule"]["tasks"][tid]["earlyStart"])
+    check("and every task behind it moves too",
+          moved == len(sched["tasks"]), f"{moved} of {len(sched['tasks'])} moved")
+
+    check("so the finish moves with it",
+          sched["projectFinish"] != finish_before,
+          f"{finish_before} -> {sched['projectFinish']}")
+    check("and the move is reported, not silent",
+          out.get("finishMovedDays", 0) != 0, str(out.get("finishMovedDays")))
+
+    # A task pinned to a date is pinned. Moving the project must not drag it.
+    tasks = sorted(sched["tasks"].values(), key=lambda t: t["earlyStart"])
+    pinned_id = tasks[-1]["id"]
+    call("PATCH", f"/projects/{cid}/tasks/{pinned_id}",
+         {"constraintType": "MUST_START_ON", "constraintDate": "2026-12-14"})
+    _, pinned_before = call("GET", f"/projects/{cid}/schedule")
+    was = pinned_before["schedule"]["tasks"][pinned_id]["earlyStart"]
+
+    _, out2 = call("POST", f"/projects/{cid}/reschedule", {"startDate": "2026-11-02"})
+    check("a task pinned to a date stays pinned when the project moves",
+          out2["schedule"]["tasks"][pinned_id]["earlyStart"] == was,
+          f"{was} -> {out2['schedule']['tasks'][pinned_id]['earlyStart']}")
+
+    status, _ = call("POST", f"/projects/{cid}/reschedule", {"startDate": "26th October"})
+    check("a malformed date is rejected", status == 400, f"got {status}")
+    status, _ = call("POST", f"/projects/{cid}/reschedule", {})
+    check("an empty reschedule is rejected", status == 400, f"got {status}")
+
+    status, out = call("PATCH", f"/projects/{cid}", {"startDate": "2026-11-02"})
+    check("PATCH points at the right route instead of refusing blankly",
+          status == 400 and out.get("code") == "USE_RESCHEDULE", str(out)[:90])
+
+    _, hist = call("GET", f"/projects/{cid}/history")
+    check("moving the project is in the change log",
+          any(h["action"] == "project.start" for h in hist.get("history", [])),
+          str([h["action"] for h in hist.get("history", [])][:4]))
+else:
+    print("  SKIP  no closedown template to move")
+
 print("\n" + ("ALL EDITING CHECKS PASSED" if not failures else f"FAILURES: {failures}"))
 sys.exit(1 if failures else 0)

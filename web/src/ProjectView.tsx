@@ -248,6 +248,27 @@ export function ProjectView({ projectId, onBack }: { projectId: string; onBack()
         <button className="ghost" onClick={onBack}>
           ← Projects
         </button>
+        {/*
+          The project start, editable in place. It is the date every
+          unconstrained task hangs off, and it used to be write-once — a
+          template started on the wrong day could only be deleted and
+          started again.
+        */}
+        <div className="finish">
+          <span className="finish-label">Start</span>
+          <input
+            type="date"
+            className="start-date"
+            value={schedule.projectStart}
+            disabled={busy}
+            onChange={(e) => {
+              const next = e.target.value
+              if (!next || next === schedule.projectStart) return
+              void mutate(() => api.reschedule(projectId, { startDate: next }))
+            }}
+            title="Moves the whole project. Tasks with their own constraint stay put."
+          />
+        </div>
         <div className="finish">
           <span className="finish-label">Completion</span>
           <strong>{schedule.projectFinish}</strong>

@@ -275,7 +275,15 @@ function ProjectList({
 
       <form className="new-project" onSubmit={create}>
         <input placeholder="New project name" value={name} onChange={(e) => setName(e.target.value)} />
-        <input type="date" value={start} onChange={(e) => setStart(e.target.value)} />
+        <label className="field">
+          <span>Starts</span>
+          <input
+            type="date"
+            value={start}
+            onChange={(e) => setStart(e.target.value)}
+            title="When the first task begins. Everything else is scheduled from this."
+          />
+        </label>
         <select value={templateId} onChange={(e) => setTemplateId(e.target.value)}>
           <option value="">Blank project</option>
           {Object.entries(byCategory).map(([category, list]) => (
@@ -298,7 +306,8 @@ function ProjectList({
           <strong>{chosen.name}</strong>
           {chosen.description ? ` — ${chosen.description}` : ''}{' '}
           <span className="sub">
-            {chosen.taskCount} tasks, about {chosen.workingDays} working days of effort.
+            {chosen.taskCount} tasks, about {chosen.workingDays} working days of effort, starting{' '}
+            {start}.
           </span>
         </p>
       )}
