@@ -183,9 +183,11 @@ console.log('\n== a subcontractor sheet contains only their work ==')
   const printed = await page.evaluate(() => ({
     // By data-category, not by reading row names — the name carries the phase,
     // not the trade, so matching on text would prove nothing.
-    categories: [...document.querySelectorAll('.print-row')].map((r) =>
-      r.getAttribute('data-category'),
-    ),
+    rows: [...document.querySelectorAll('.print-row')].map((r) => ({
+      category: r.getAttribute('data-category'),
+      context: r.classList.contains('context'),
+      name: r.querySelector('.print-col-name')?.textContent?.trim() ?? '',
+    })),
     filterNote: document.querySelector('.print-filter')?.textContent?.trim() ?? null,
   }))
   await page.emulateMedia({ media: 'screen' })
@@ -194,17 +196,35 @@ console.log('\n== a subcontractor sheet contains only their work ==')
     /maintenance/i.test(printed.filterNote ?? ''), printed.filterNote ?? '(none)')
   check('and warns it is part of a larger schedule',
     /larger schedule/i.test(printed.filterNote ?? ''), printed.filterNote ?? '')
+  check('and explains the grey rows',
+    /grey/i.test(printed.filterNote ?? ''), printed.filterNote ?? '')
 
-  const foreign = printed.categories.filter((c) => c !== maintenance.value)
-  check('every printed row belongs to that trade',
-    printed.categories.length > 0 && foreign.length === 0,
-    foreign.length
-      ? `${foreign.length} foreign rows`
-      : `${printed.categories.length} rows, all Maintenance`)
+  // Rows are either theirs, or context: work from another trade that theirs
+  // waits on. A sheet with only their own rows would give dates with the
+  // reasons removed, and on this template Maintenance waits on both
+  // Housekeeping and F&B.
+  const own = printed.rows.filter((r) => !r.context)
+  const context = printed.rows.filter((r) => r.context)
+  const strays = own.filter((r) => r.category !== maintenance.value)
 
-  check('and the filtered PDF is smaller than the whole one',
-    readFileSync(onePath).length < readFileSync(allPath).length,
-    `${readFileSync(onePath).length} vs ${readFileSync(allPath).length} bytes`)
+  check('every non-context row belongs to that trade',
+    own.length > 0 && strays.length === 0,
+    strays.length ? `${strays.length} strays` : `${own.length} Maintenance rows`)
+  check('and the work it waits on is carried too',
+    context.length > 0, `${context.length} context rows`)
+  check('context rows come from other trades',
+    context.every((r) => r.category !== maintenance.value),
+    context.map((r) => r.name).slice(0, 2).join(' | '))
+  check('and are named with whose they are',
+    context.every((r) => /·\s*\S/.test(r.name)), context[0]?.name ?? '(none)')
+
+  // Row count, not byte size: a PDF's size is dominated by font subsetting and
+  // compression, so a ten-row sheet can easily weigh more than a twenty-row
+  // one. Comparing bytes measured nothing.
+  check('and the sheet is shorter than the whole schedule',
+    printed.rows.length < 22, `${printed.rows.length} rows vs 22 in the project`)
+  check('both PDFs were written', readFileSync(onePath).length > 8000 && readFileSync(allPath).length > 8000,
+    `${readFileSync(allPath).length} / ${readFileSync(onePath).length} bytes`)
 }
 
 check('no console errors', errs.length === 0, errs.slice(0, 2).join(' | '))

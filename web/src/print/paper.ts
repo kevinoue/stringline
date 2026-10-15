@@ -64,8 +64,9 @@ export const PRINT = {
   axisHeight: 30,
   titleBlockHeight: 58,
   legendHeight: 22,
-  /** The task-name column on the printed sheet. */
-  nameColumn: 190,
+  /** Floor and ceiling for the task-name column; the real width is derived. */
+  nameColumnMin: 170,
+  nameColumnMax: 320,
   /** Date columns beside the name, when they are shown. */
   dateColumns: 150,
   fontSize: 9,
@@ -84,6 +85,22 @@ export function rowsPerPage(geometry: PageGeometry): number {
 }
 
 /**
+ * How much of the sheet the task name gets.
+ *
+ * A share of the width rather than a fixed figure. At 190px every name longer
+ * than about thirty characters was truncated — "Winterise plumbing — drain
+ * lines, antifreeze traps" became "Winterise plumbing — drain line…" — on a
+ * seventeen-inch sheet with room to spare. Clamped at both ends so a narrow
+ * sheet still leaves the chart something to draw in, and a wide one does not
+ * hand the names half the page.
+ */
+export function nameColumnWidth(geometry: PageGeometry): number {
+  return Math.round(
+    Math.min(PRINT.nameColumnMax, Math.max(PRINT.nameColumnMin, geometry.contentWidth * 0.2)),
+  )
+}
+
+/**
  * Pixels per day that make the whole project span the sheet.
  *
  * Returns the exact fit with no clamping: unlike the screen, there is no
@@ -96,7 +113,7 @@ export function fitDayWidth(
   totalDays: number,
   showDateColumns: boolean,
 ): number {
-  const table = PRINT.nameColumn + (showDateColumns ? PRINT.dateColumns : 0)
+  const table = nameColumnWidth(geometry) + (showDateColumns ? PRINT.dateColumns : 0)
   const forChart = geometry.contentWidth - table
   // One day minimum of span, so a single-day project does not divide by zero.
   return forChart / Math.max(1, totalDays)

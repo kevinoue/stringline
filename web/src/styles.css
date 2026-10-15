@@ -619,6 +619,15 @@ button.danger:hover:not(:disabled) { background: #fdf0ee; }
      already carries the colour, and red text is harder to read than black. */
   .print-row.critical .print-col-name { font-weight: 600; }
 
+  /* Another trade's work, carried onto a filtered sheet so a date never
+     appears without its reason. Clearly not yours: lighter, italic, and
+     never bold even when it is on the critical path. */
+  .print-row.context .print-col-name {
+    color: #888; font-style: italic; font-weight: 400;
+  }
+  .print-row.context .print-col-date,
+  .print-row.context .print-col-float { color: #999; }
+
   .print-col-name {
     flex: 1; min-width: 0;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;

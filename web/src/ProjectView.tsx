@@ -560,6 +560,7 @@ export function ProjectView({ projectId, onBack }: { projectId: string; onBack()
             categories={categories}
             categoryOf={categoryOf}
             categoryLabel={categoryLabel}
+            dependencies={dependencies}
             baseline={baseline}
             summary={summary}
             // The same row order the screen uses, so paper and screen agree.

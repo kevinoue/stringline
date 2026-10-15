@@ -4,6 +4,7 @@ import { api, ApiError } from '../api/client.js'
 import type {
   Baseline,
   Category,
+  Dependency,
   Phase,
   ProjectSummary,
   Schedule,
@@ -31,6 +32,7 @@ interface Props {
   categories: Category[]
   categoryOf: Map<string, string>
   categoryLabel: string
+  dependencies: Dependency[]
   baseline: Baseline | null
   summary: ProjectSummary | null
   order: ScheduledTask[]
@@ -56,6 +58,7 @@ export function PrintDialog({
   categories,
   categoryOf,
   categoryLabel,
+  dependencies,
   baseline,
   summary,
   order,
@@ -92,9 +95,19 @@ export function PrintDialog({
   const geometry = geometryFor(paper, orientation)
   const perPage = rowsPerPage(geometry)
   // Has to reflect the filter, or the sheet count on screen is a lie.
-  const printedRows = onlyCategory
-    ? order.filter((t) => categoryOf.get(t.id) === onlyCategory).length
-    : order.length
+  const printedRows = (() => {
+    if (!onlyCategory) return order.length
+    const mine = new Set(
+      order.filter((t) => categoryOf.get(t.id) === onlyCategory).map((t) => t.id),
+    )
+    // Plus the other trades' work it waits on, which the sheet also carries.
+    const waiting = new Set(
+      dependencies
+        .filter((d) => mine.has(d.successorId) && !mine.has(d.predecessorId))
+        .map((d) => d.predecessorId),
+    )
+    return mine.size + waiting.size
+  })()
   const sheets = Math.max(1, Math.ceil(printedRows / perPage)) + (showSummary && summary ? 1 : 0)
 
   // Span, not the padded screen timeline: this is how many days of real project
@@ -228,8 +241,9 @@ export function PrintDialog({
           )}
           {onlyCategory && (
             <p className="hint">
-              One {categoryLabel.toLowerCase()}&apos;s work, for handing to them. The title block
-              says so, in case the sheet travels without you.
+              One {categoryLabel.toLowerCase()}&apos;s work, for handing to them — plus whatever
+              they are waiting on, in grey, so a date never appears without its reason. The title
+              block says the sheet is partial, in case it travels without you.
             </p>
           )}
 
@@ -312,6 +326,7 @@ export function PrintDialog({
             phases={phases}
             categories={categories}
             categoryOf={categoryOf}
+            dependencies={dependencies}
             baseline={baseline}
             summary={summary}
             order={order}

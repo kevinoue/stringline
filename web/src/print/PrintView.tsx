@@ -2,6 +2,7 @@ import { createTimeline, weekendBands, type Timeline } from '../gantt/timeline.j
 import type {
   Baseline,
   Category,
+  Dependency,
   Phase,
   ProjectSummary,
   Schedule,
@@ -9,7 +10,14 @@ import type {
   TaskDetail,
 } from '../api/types.js'
 import { PALETTE } from '../gantt/palette.js'
-import { geometryFor, PRINT, rowsPerPage, type Orientation, type PaperSize } from './paper.js'
+import {
+  geometryFor,
+  nameColumnWidth,
+  PRINT,
+  rowsPerPage,
+  type Orientation,
+  type PaperSize,
+} from './paper.js'
 
 const HEALTH_LABEL: Record<string, string> = {
   'on-track': 'On track',
@@ -44,6 +52,8 @@ interface Props {
   categories: Category[]
   /** Task id -> category id. */
   categoryOf: Map<string, string>
+  /** Needed on a filtered sheet, to show what the filtered work is waiting on. */
+  dependencies: Dependency[]
   baseline: Baseline | null
   summary: ProjectSummary | null
   /** Screen row order, so paper and screen agree. */
@@ -71,6 +81,7 @@ export function PrintView({
   phases,
   categories,
   categoryOf,
+  dependencies,
   baseline,
   summary,
   order,
@@ -78,7 +89,7 @@ export function PrintView({
   const geometry = geometryFor(options.paper, options.orientation)
   const perPage = rowsPerPage(geometry)
 
-  const tableWidth = PRINT.nameColumn + (options.showDates ? PRINT.dateColumns : 0)
+  const tableWidth = nameColumnWidth(geometry) + (options.showDates ? PRINT.dateColumns : 0)
   // Breathing room between the last text column and the first date tick, which
   // otherwise print on top of each other.
   const GUTTER = 10
@@ -97,8 +108,30 @@ export function PrintView({
   )
 
   const only = options.onlyCategory
-  const rows = only ? order.filter((t) => categoryOf.get(t.id) === only) : order
   const onlyName = only ? (categories.find((c) => c.id === only)?.name ?? null) : null
+
+  /*
+   * A filtered sheet carries the work it is waiting on, as well as its own.
+   *
+   * Without this it says "starts the 10th" and gives no reason — and on a real
+   * job the reason is usually another trade. The hotel closedown has
+   * "Winterise plumbing" waiting on both Housekeeping and F&B; a Maintenance
+   * sheet that omitted them would be handing someone a date with the cause
+   * removed, which is the opposite of what this product is for.
+   *
+   * Only *direct* predecessors. Following the chain further would drag most of
+   * the schedule back onto the page and defeat the filter.
+   */
+  const mine = new Set(
+    only ? order.filter((t) => categoryOf.get(t.id) === only).map((t) => t.id) : [],
+  )
+  const waitingOn = new Set<string>()
+  if (only) {
+    for (const d of dependencies) {
+      if (mine.has(d.successorId) && !mine.has(d.predecessorId)) waitingOn.add(d.predecessorId)
+    }
+  }
+  const rows = only ? order.filter((t) => mine.has(t.id) || waitingOn.has(t.id)) : order
 
   const pages: ScheduledTask[][] = []
   for (let i = 0; i < rows.length; i += perPage) pages.push(rows.slice(i, i + perPage))
@@ -126,7 +159,8 @@ export function PrintView({
         {options.subtitle && <p className="print-subtitle">{options.subtitle}</p>}
         {onlyName && (
           <p className="print-filter">
-            {onlyName} only — this is part of a larger schedule
+            {onlyName} only — part of a larger schedule
+            {waitingOn.size > 0 && ', with the work it waits on shown in grey'}
           </p>
         )}
       </div>
@@ -268,7 +302,11 @@ export function PrintView({
                 return (
                   <div
                     key={task.id}
-                    className={'print-row' + (task.isCritical ? ' critical' : '')}
+                    className={
+                      'print-row' +
+                      (task.isCritical ? ' critical' : '') +
+                      (waitingOn.has(task.id) ? ' context' : '')
+                    }
                     // Carried in the DOM rather than inferred from the row's
                     // text, which shows the phase. Lets a filtered sheet be
                     // checked precisely rather than by reading names.
@@ -278,7 +316,17 @@ export function PrintView({
                     <span className="print-col-name" title={task.name}>
                       {task.isMilestone && <span className="print-diamond">◆</span>}
                       {task.name}
-                      {phase && <span className="print-phase"> · {phase}</span>}
+                      {waitingOn.has(task.id) ? (
+                        // Whose it is matters more than which phase, on a sheet
+                        // where the point of the row is that it is not yours.
+                        <span className="print-phase">
+                          {' '}
+                          · {categories.find((c) => c.id === categoryOf.get(task.id))?.name ??
+                            'another trade'}
+                        </span>
+                      ) : (
+                        phase && <span className="print-phase"> · {phase}</span>
+                      )}
                     </span>
                     {options.showDates && (
                       <>

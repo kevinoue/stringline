@@ -211,5 +211,45 @@ st, _ = call("PATCH", f"/projects/{their_pid}/tasks/{o['taskId']}",
              {"categoryId": plumbing["id"]}, outsider)
 check("and cannot tag their task with our category", st in (400, 403, 404, 422), f"got {st}")
 
+print("\n== a label never changes what the solver does ==")
+# Categories are a label, nothing more. Dependencies link tasks regardless of
+# who owns them, and the closedown is full of cross-department links —
+# Maintenance cannot winterise the plumbing until F&B have emptied the
+# walk-ins. If tagging work could change its dates, the whole idea would be
+# unsafe.
+_, r = call("POST", "/categories", {"name": "F&B"}, owner)
+fb = r["category"]["id"]
+_, r = call("POST", "/categories", {"name": "Maint"}, owner)
+maint = r["category"]["id"]
+
+_, r = call("POST", "/projects", {"name": "Cross", "startDate": "2026-11-02"}, owner)
+cross = r["project"]["id"]
+_, r = call("POST", f"/projects/{cross}/tasks", {"name": "Empty walk-ins", "durationDays": 3}, owner)
+walkins = r["taskId"]
+_, r = call("POST", f"/projects/{cross}/tasks", {"name": "Shut off water", "durationDays": 2}, owner)
+water = r["taskId"]
+call("POST", f"/projects/{cross}/dependencies",
+     {"predecessorId": walkins, "successorId": water, "type": "FS"}, owner)
+
+_, before = call("GET", f"/projects/{cross}/schedule", None, owner)
+start_before = before["schedule"]["tasks"][water]["earlyStart"]
+
+call("PATCH", f"/projects/{cross}/tasks/{walkins}", {"categoryId": fb}, owner)
+call("PATCH", f"/projects/{cross}/tasks/{water}", {"categoryId": maint}, owner)
+_, tagged = call("GET", f"/projects/{cross}/schedule", None, owner)
+check("tagging two linked tasks to different departments changes no date",
+      tagged["schedule"]["tasks"][water]["earlyStart"] == start_before,
+      f"{start_before} -> {tagged['schedule']['tasks'][water]['earlyStart']}")
+
+st, out = call("PATCH", f"/projects/{cross}/tasks/{walkins}", {"durationDays": 5}, owner)
+after = out["schedule"]["tasks"][water]["earlyStart"]
+check("and a slip in one department still pushes the other",
+      after != start_before, f"{start_before} -> {after}")
+check("the cross-department knock-on is reported, not silent",
+      out.get("finishMovedDays", 0) == 2, str(out.get("finishMovedDays")))
+check("both remain on the critical path across the boundary",
+      tagged["schedule"]["tasks"][water]["isCritical"]
+      and out["schedule"]["tasks"][walkins]["isCritical"])
+
 print("\n" + ("ALL CATEGORY CHECKS PASSED" if not failures else f"FAILURES: {failures}"))
 sys.exit(1 if failures else 0)
