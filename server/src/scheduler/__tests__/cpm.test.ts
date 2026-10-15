@@ -364,6 +364,77 @@ describe('constraints', () => {
   })
 })
 
+describe('the anchor and the first day of work', () => {
+  /*
+   * These are different things, and conflating them is how a schedule claims
+   * to start a fortnight before anything happens. Dragging the first bar later
+   * sets a constraint on that task; the project's anchor does not move, and
+   * every figure derived from it has to measure from the work instead.
+   */
+  test('they are the same on a plain schedule', () => {
+    const result = solve(build({ tasks: [{ id: 'A', name: 'Work', durationDays: 3 }] }))
+    expect(result.firstWorkStart).toBe(result.projectStart)
+    expect(result.firstWorkStart).toBe(MONDAY)
+  })
+
+  test('a constrained first task moves the work but not the anchor', () => {
+    const result = solve(
+      build({
+        tasks: [
+          {
+            id: 'A',
+            name: 'Held',
+            durationDays: 3,
+            constraintType: 'START_NO_EARLIER_THAN',
+            constraintDate: '2026-01-19',
+          },
+          { id: 'B', name: 'After', durationDays: 2 },
+        ],
+        dependencies: [{ predecessorId: 'A', successorId: 'B', type: 'FS' }],
+      }),
+    )
+    expect(result.projectStart).toBe(MONDAY)
+    expect(result.firstWorkStart).toBe('2026-01-19')
+  })
+
+  test('duration is measured from the work, not the anchor', () => {
+    // Held two weeks out, then 3 + 2 days of work: five working days of
+    // schedule, not the nineteen between the anchor and the finish. Measuring
+    // from the anchor makes every percentage derived from it wrong too.
+    const result = solve(
+      build({
+        tasks: [
+          {
+            id: 'A',
+            name: 'Held',
+            durationDays: 3,
+            constraintType: 'START_NO_EARLIER_THAN',
+            constraintDate: '2026-01-19',
+          },
+          { id: 'B', name: 'After', durationDays: 2 },
+        ],
+        dependencies: [{ predecessorId: 'A', successorId: 'B', type: 'FS' }],
+      }),
+    )
+    expect(result.durationWorkingDays).toBe(5)
+  })
+
+  test('work recorded before the anchor counts as the start', () => {
+    // Someone started early. That is a fact, and the schedule should say the
+    // work began when it began rather than when it was planned to.
+    const result = solve(
+      build({
+        projectStart: '2026-01-12',
+        tasks: [
+          { id: 'A', name: 'Started early', durationDays: 3, actualStart: '2026-01-05' },
+        ],
+      }),
+    )
+    expect(result.projectStart).toBe('2026-01-12')
+    expect(result.firstWorkStart).toBe('2026-01-05')
+  })
+})
+
 describe('project deadline', () => {
   test('a missed deadline produces negative float rather than a healthy-looking schedule', () => {
     const result = solve(

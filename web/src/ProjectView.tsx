@@ -296,6 +296,20 @@ export function ProjectView({ projectId, onBack }: { projectId: string; onBack()
             }}
             title="Moves the whole project. Tasks with their own constraint stay put."
           />
+          {/*
+            The anchor and the first day of work are different things, and
+            quietly showing only the anchor made the toolbar look stale after
+            dragging the first bar later — the date had not changed, but
+            nothing was explaining why nothing happened until later.
+          */}
+          {schedule.firstWorkStart !== schedule.projectStart && (
+            <span
+              className="chip muted"
+              title="The first task starts later than the project anchor, because something is holding it."
+            >
+              work starts {schedule.firstWorkStart}
+            </span>
+          )}
         </div>
         <div className="finish">
           <span className="finish-label">Completion</span>

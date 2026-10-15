@@ -22,7 +22,13 @@ export interface ScheduledTask {
 }
 
 export interface Schedule {
+  /**
+   * The project's anchor — where unconstrained work begins. Editable in the
+   * toolbar. Not necessarily when anything happens: see `firstWorkStart`.
+   */
   projectStart: IsoDate
+  /** The earliest date any task starts. What "when does this start" means. */
+  firstWorkStart: IsoDate
   dataDate: IsoDate | null
   projectFinish: IsoDate
   durationWorkingDays: number

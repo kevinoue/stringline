@@ -154,7 +154,10 @@ export async function buildSummary(
     phase,
     health,
     asOf,
-    start: result.projectStart,
+    // When work actually begins, not the anchor. Drag the first task a
+    // fortnight later and the anchor stays put — reporting it as the start
+    // describes a fortnight of nothing as part of the job.
+    start: result.firstWorkStart,
     finish: result.projectFinish,
     deadline: input.projectDeadline ?? null,
     deadlineFloat: result.deadlineFloat,
@@ -207,8 +210,11 @@ function narrate(f: ProjectSummary['facts'], inProgress: ScheduledTask[]): strin
   // 1. Where it runs, and how far through it is.
   if (f.phase === 'not-started') {
     out.push(
-      `Planned to run from ${f.start} to ${f.finish} — ${days(f.durationWorkingDays)} of work ` +
-        `across ${f.tasksTotal} tasks. Nothing has been started yet.`,
+      // "of work" used to label the span — the elapsed stretch from start to
+      // finish — which counted idle time as effort and only ever looked right
+      // when the two happened to coincide.
+      `Planned to run from ${f.start} to ${f.finish} — ${days(f.durationWorkingDays)} ` +
+        `of working time, ${f.tasksTotal} tasks. Nothing has been started yet.`,
     )
   } else if (f.phase === 'complete') {
     out.push(`All ${f.tasksTotal} tasks are complete. The project ran from ${f.start} to ${f.finish}.`)

@@ -101,6 +101,9 @@ input {
 .chip { font-size: 12px; padding: 2px 7px; border-radius: 10px; }
 .chip.good { background: #e6f2ea; color: var(--good); }
 .chip.bad { background: #fbe9e6; color: var(--bad); }
+/* Neither good nor bad — a fact worth noticing. Used when the first day of
+   work is later than the project anchor. */
+.chip.muted { background: var(--bg); color: var(--ink-soft); border: 1px solid var(--line); }
 
 /* ── Auth ─────────────────────────────────────────────────────────────────── */
 

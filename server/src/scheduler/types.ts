@@ -159,11 +159,32 @@ export interface ScheduledTask {
 }
 
 export interface ScheduleResult {
+  /**
+   * The project's anchor — where unconstrained work begins.
+   *
+   * Not necessarily when anything actually happens: constrain or drag the
+   * first task later and the anchor stays put while real work moves. Use
+   * `firstWorkStart` for "when does this start".
+   */
   projectStart: IsoDate
+  /**
+   * The earliest date any task starts.
+   *
+   * Equal to `projectStart` on a plain schedule, and later whenever the first
+   * task carries a constraint. This is the one to report: a project that says
+   * it starts on the 2nd when nothing happens until the 16th is describing a
+   * fortnight of nothing as part of the job.
+   */
+  firstWorkStart: IsoDate
   /** Echoed back when supplied, so consumers can draw the fact/forecast line. */
   dataDate: IsoDate | null
   projectFinish: IsoDate
-  /** Working days from project start to finish, on the default calendar. */
+  /**
+   * Working days from the first real work to the finish, on the default
+   * calendar. Measured from `firstWorkStart`, not the anchor — otherwise an
+   * idle fortnight before the job begins counts as schedule, and every
+   * percentage derived from it is wrong.
+   */
   durationWorkingDays: number
   tasks: Record<string, ScheduledTask>
   /** Task ids along the critical path, in topological order. */

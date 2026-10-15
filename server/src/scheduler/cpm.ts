@@ -487,6 +487,21 @@ function assemble(
     if (day > inclusiveProjectFinish) inclusiveProjectFinish = day
   }
 
+  /*
+   * The earliest any task actually starts.
+   *
+   * The anchor is where unconstrained work begins, but a constrained — or
+   * dragged — first task pushes real work later while the anchor stays put.
+   * Reporting the anchor as the start then describes an idle stretch as part
+   * of the job, and makes `durationWorkingDays` count it as schedule.
+   */
+  let firstWorkDay = inclusiveProjectFinish
+  for (const id of order) {
+    const start = nodes.get(id)!.earlyStart
+    if (start < firstWorkDay) firstWorkDay = start
+  }
+  if (order.length === 0) firstWorkDay = defaultCal.snapForward(projectStartDay)
+
   let deadlineFloat: number | null = null
   if (input.projectDeadline) {
     const deadlineDay = defaultCal.snapBack(toDayIndex(input.projectDeadline))
@@ -495,12 +510,11 @@ function assemble(
 
   return {
     projectStart: fromDayIndex(defaultCal.snapForward(projectStartDay)),
+    firstWorkStart: fromDayIndex(firstWorkDay),
     dataDate: dataDateDay === null ? null : fromDayIndex(dataDateDay),
     projectFinish: fromDayIndex(inclusiveProjectFinish),
-    durationWorkingDays: defaultCal.countWorkingDays(
-      defaultCal.snapForward(projectStartDay),
-      inclusiveProjectFinish,
-    ) + 1,
+    durationWorkingDays:
+      defaultCal.countWorkingDays(firstWorkDay, inclusiveProjectFinish) + 1,
     tasks,
     criticalPath,
     deadlineFloat,
