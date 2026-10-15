@@ -39,6 +39,10 @@ you, in a sentence.**
   accept the consequence.
 - **Templates** — including seasonal hotel closedown and reopening, which nothing else ships.
   Save any project as a template.
+- **Printing** — the task list and chart on Letter, Legal, 11×17, A4 or A3, landscape or
+  portrait, with an editable title block and an optional plain-English cover sheet. The whole
+  project is fitted to the sheet width; rows that overflow carry the title block and date axis
+  onto the next one.
 
 ## Design notes
 
@@ -118,6 +122,7 @@ python3 scripts/smoke.py                   # 32 HTTP checks against a running se
 python3 scripts/drag.py                    # drag semantics
 python3 scripts/templates.py               # templates
 cd ../web && npm run shoot                 # headless-browser checks + screenshots
+node scripts/print-shoot.mjs               # prints real PDFs and inspects them
 ```
 
 `scripts/setup.py` and `web/scripts/setup-shoot.mjs` cover first-run setup, and

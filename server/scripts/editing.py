@@ -135,5 +135,39 @@ check("its links went with it",
 status, _ = call("DELETE", f"/projects/{pid}/tasks/{ids['b']}")
 check("deleting a gone task is 404", status == 404, f"got {status}")
 
+print("\n== renaming a project, and its printed title block ==")
+# The title block is what a printed schedule is identified by in a site
+# trailer: which job, and which revision. Kept on the project so it is not
+# retyped on every print.
+status, out = call("PATCH", f"/projects/{pid}", {"name": "West wing — phase 2"})
+check("a project can be renamed", status == 200, f"got {status}")
+check("and comes back renamed", out["project"]["name"] == "West wing — phase 2", str(out)[:90])
+
+status, out = call("PATCH", f"/projects/{pid}",
+                   {"printSubtitle": "Rev C — issued for construction"})
+check("the title block subtitle saves", status == 200, f"got {status}")
+check("and comes back",
+      out["project"]["printSubtitle"] == "Rev C — issued for construction",
+      str(out["project"].get("printSubtitle")))
+
+status, out = call("PATCH", f"/projects/{pid}", {"printTitle": "  "})
+check("a blank title clears the override rather than printing a gap",
+      status == 200 and out["project"]["printTitle"] is None, str(out["project"].get("printTitle")))
+
+_, sched = call("GET", f"/projects/{pid}/schedule")
+check("the schedule payload carries the title block, so print cannot disagree",
+      sched["project"]["printSubtitle"] == "Rev C — issued for construction",
+      str(sched.get("project")))
+
+status, _ = call("PATCH", f"/projects/{pid}", {"name": "   "})
+check("a blank name is rejected", status == 400, f"got {status}")
+status, _ = call("PATCH", f"/projects/{pid}", {})
+check("an empty change is rejected", status == 400, f"got {status}")
+
+# Dates are deliberately not editable here — changing them reschedules the
+# project, which has to go through the routes that explain and log the move.
+status, out = call("PATCH", f"/projects/{pid}", {"deadline": "2027-01-01"})
+check("a date change is not silently accepted here", status == 400, f"got {status}")
+
 print("\n" + ("ALL EDITING CHECKS PASSED" if not failures else f"FAILURES: {failures}"))
 sys.exit(1 if failures else 0)

@@ -90,7 +90,8 @@ router.get('/', async (req: Request, res: Response) => {
   const { rows } = await transaction(async (client) =>
     client.query(
       `SELECT id, name, start_date::text AS start_date, deadline::text AS deadline,
-              data_date::text AS data_date, computed_finish::text AS computed_finish, status
+              data_date::text AS data_date, computed_finish::text AS computed_finish, status,
+              print_title AS "printTitle", print_subtitle AS "printSubtitle"
        FROM projects WHERE company_id = $1 AND status = 'active'
        ORDER BY created_at DESC`,
       [req.company!.id],
@@ -230,6 +231,68 @@ router.delete('/templates/:templateId', requirePlanner, async (req: Request, res
   }
 })
 
+/**
+ * Rename a project, or set what its printed title block says.
+ *
+ * Deliberately only the fields that cannot move a date. `deadline` and
+ * `startDate` belong here conceptually, but changing either reschedules the
+ * project, which means going through `applyAndExplain` so the change is
+ * explained and logged like every other date move. Until that is wired up,
+ * silently accepting them here would be the one edit that slipped through
+ * without an impact banner.
+ */
+router.patch('/:projectId', requirePlanner, async (req: Request, res: Response) => {
+  const projectId = param(req, 'projectId')
+  const { name, printTitle, printSubtitle } = req.body ?? {}
+
+  if (name === undefined && printTitle === undefined && printSubtitle === undefined) {
+    res.status(400).json({ error: 'Nothing to change' })
+    return
+  }
+  if (name !== undefined && !String(name).trim()) {
+    res.status(400).json({ error: 'A project needs a name' })
+    return
+  }
+
+  // Empty strings clear the override rather than storing a blank, so the title
+  // block falls back to the project name instead of printing a gap.
+  const blankToNull = (v: unknown): string | null =>
+    v === undefined ? null : String(v).trim() || null
+
+  try {
+    const project = await transaction(async (client) => {
+      if (!(await ownsProject(client, projectId, req.company!.id))) return null
+      const { rows } = await client.query(
+        `UPDATE projects
+            SET name           = COALESCE($2, name),
+                print_title    = CASE WHEN $3::boolean THEN $4 ELSE print_title END,
+                print_subtitle = CASE WHEN $5::boolean THEN $6 ELSE print_subtitle END,
+                updated_at     = NOW()
+          WHERE id = $1
+          RETURNING id, name, start_date::text AS start_date, deadline::text AS deadline,
+                    print_title AS "printTitle", print_subtitle AS "printSubtitle"`,
+        [
+          projectId,
+          name === undefined ? null : String(name).trim(),
+          printTitle !== undefined,
+          blankToNull(printTitle),
+          printSubtitle !== undefined,
+          blankToNull(printSubtitle),
+        ],
+      )
+      return rows[0] ?? null
+    })
+
+    if (!project) {
+      res.status(404).json({ error: 'Project not found' })
+      return
+    }
+    res.json({ project })
+  } catch (error) {
+    handleError(res, error, 'update-project')
+  }
+})
+
 /** Archive a project. Soft — the change log and baselines are worth keeping. */
 router.delete('/:projectId', requirePlanner, async (req: Request, res: Response) => {
   const projectId = param(req, 'projectId')
@@ -291,12 +354,22 @@ router.get('/:projectId/schedule', async (req: Request, res: Response) => {
            FROM phases WHERE project_id = $1 ORDER BY sort_order, name`,
         [param(req, 'projectId')],
       )
+      // The printed title block comes from here rather than a second request,
+      // so what is printed can never disagree with the chart beside it.
+      const meta = await client.query(
+        `SELECT name, deadline::text AS deadline,
+                print_title AS "printTitle", print_subtitle AS "printSubtitle"
+           FROM projects WHERE id = $1`,
+        [param(req, 'projectId')],
+      )
+
       return {
         schedule: result,
         baseline,
         dependencies: dependencies.rows,
         details: details.rows,
         phases: phases.rows,
+        project: meta.rows[0],
       }
     })
     if (!payload) {

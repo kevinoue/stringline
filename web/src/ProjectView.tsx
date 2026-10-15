@@ -7,11 +7,13 @@ import type {
   ProjectSummary,
   Schedule,
   Phase,
+  ScheduleProject,
   TaskDetail,
 } from './api/types.js'
 import { ImpactBanner } from './components/ImpactBanner.js'
 import { SummaryPanel } from './components/SummaryPanel.js'
 import { Phases } from './components/Phases.js'
+import { PrintDialog } from './print/PrintDialog.js'
 import { TaskPanel } from './components/TaskPanel.js'
 import { TaskTable } from './components/TaskTable.js'
 import { Gantt, type DragResult } from './gantt/Gantt.js'
@@ -50,6 +52,8 @@ export function ProjectView({ projectId, onBack }: { projectId: string; onBack()
   const [busy, setBusy] = useState(false)
   const [adding, setAdding] = useState(false)
   const [managingPhases, setManagingPhases] = useState(false)
+  const [printing, setPrinting] = useState(false)
+  const [meta, setMeta] = useState<ScheduleProject | null>(null)
   const [newName, setNewName] = useState('')
   const [newDuration, setNewDuration] = useState('1')
 
@@ -60,6 +64,7 @@ export function ProjectView({ projectId, onBack }: { projectId: string; onBack()
     setDependencies(data.dependencies)
     setDetails(Object.fromEntries(data.details.map((d) => [d.id, d])))
     setPhases(data.phases)
+    setMeta(data.project)
     // Recomputed on every load, so it is never stale relative to the chart
     // beside it. A summary that disagrees with the bars is worse than none.
     api.summary(projectId).then(setSummary).catch(() => setSummary(null))
@@ -259,6 +264,9 @@ export function ProjectView({ projectId, onBack }: { projectId: string; onBack()
         <button className="ghost" onClick={() => setManagingPhases(true)}>
           Phases{phases.length ? ` (${phases.length})` : ''}
         </button>
+        <button className="ghost" onClick={() => setPrinting(true)}>
+          Print
+        </button>
         <div className="zooms">
           <button
             onClick={() => setDayWidth((w) => clampDayWidth(w / 1.4))}
@@ -447,6 +455,25 @@ export function ProjectView({ projectId, onBack }: { projectId: string; onBack()
           scrollTop={scrollTop}
           onScrollTop={setScrollTop}
         />
+        {printing && meta && (
+          <PrintDialog
+            projectId={projectId}
+            projectName={meta.name}
+            printTitle={meta.printTitle}
+            printSubtitle={meta.printSubtitle}
+            schedule={schedule}
+            details={details}
+            phases={phases}
+            baseline={baseline}
+            summary={summary}
+            // The same row order the screen uses, so paper and screen agree.
+            order={order.map((id) => schedule.tasks[id]!)}
+            onClose={() => {
+              setPrinting(false)
+              void load()
+            }}
+          />
+        )}
         {managingPhases && (
           <Phases
             projectId={projectId}

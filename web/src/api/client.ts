@@ -11,6 +11,7 @@ import type {
   ProjectSummary,
   Role,
   Schedule,
+  ScheduleProject,
   TaskDetail,
   TeamView,
   Template,
@@ -195,6 +196,17 @@ export const api = {
   createProject: (name: string, startDate: string, deadline?: string) =>
     request<{ project: Project }>('POST', '/projects', { name, startDate, deadline }),
 
+  /**
+   * Rename a project or set its printed title block.
+   *
+   * Deliberately not dates: changing a start or deadline reschedules the
+   * project, which has to go through the routes that explain and log the move.
+   */
+  updateProject: (
+    projectId: string,
+    changes: { name?: string; printTitle?: string; printSubtitle?: string },
+  ) => request<{ project: Project }>('PATCH', `/projects/${projectId}`, changes),
+
   getSchedule: (projectId: string) =>
     request<{
       schedule: Schedule
@@ -202,6 +214,7 @@ export const api = {
       dependencies: Dependency[]
       details: TaskDetail[]
       phases: Phase[]
+      project: ScheduleProject
     }>('GET', `/projects/${projectId}/schedule`),
 
   // ── Phases ────────────────────────────────────────────────────────────────

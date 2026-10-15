@@ -84,12 +84,31 @@ const MONTHS = [
 /**
  * Build a scale spanning `start`..`end` with padding either side, so a bar can
  * be dragged past the current extents without the chart ending mid-gesture.
+ *
+ * Both of those behaviours are for the screen and wrong on paper, so printing
+ * turns them off. Padding would spend sheet width on empty time the reader
+ * cannot drag into, and the 1.6px floor exists because a bar thinner than that
+ * is hard to grab with a pointer — which is not a concern for something nobody
+ * is going to grab, drawn in vector at 300dpi or better.
  */
-export function createTimeline(start: string, end: string, rawDayWidth: number): Timeline {
-  const dayWidth = clampDayWidth(rawDayWidth)
+export interface TimelineOptions {
+  /** Room either side to drag into. Off for print. */
+  pad?: boolean
+  /** Hold `dayWidth` within the screen's usable range. Off for print. */
+  clamp?: boolean
+}
+
+export function createTimeline(
+  start: string,
+  end: string,
+  rawDayWidth: number,
+  options: TimelineOptions = {},
+): Timeline {
+  const { pad = true, clamp = true } = options
+  const dayWidth = clamp ? clampDayWidth(rawDayWidth) : Math.max(0.05, rawDayWidth)
   const zoom = granularityFor(dayWidth)
-  const padBefore = zoom === 'day' ? 3 : zoom === 'week' ? 7 : 14
-  const padAfter = zoom === 'day' ? 10 : zoom === 'week' ? 21 : 60
+  const padBefore = !pad ? 0 : zoom === 'day' ? 3 : zoom === 'week' ? 7 : 14
+  const padAfter = !pad ? 0 : zoom === 'day' ? 10 : zoom === 'week' ? 21 : 60
 
   const origin = toDayIndex(start) - padBefore
   const last = toDayIndex(end) + padAfter

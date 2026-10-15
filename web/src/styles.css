@@ -515,3 +515,188 @@ button.danger:hover:not(:disabled) { background: #fdf0ee; }
 .source-note { margin: 4px 0 0; font-size: 11px; color: var(--ink-soft); line-height: 1.5; }
 .source-note a { color: var(--ink-soft); }
 .selection.warn { font-family: var(--font); color: #7d5417; max-width: 60%; text-align: right; }
+
+/* ── Print ──────────────────────────────────────────────────────────────────
+ *
+ * The printed schedule is a separate layout, not the screen one restyled. It
+ * lives in the DOM at all times and is hidden on screen, because rendering it
+ * only on demand means asking the browser to print a layout it has not
+ * finished measuring.
+ *
+ * `@page { size }` is injected at runtime by PrintDialog — it cannot read a CSS
+ * custom property, and the sheet size is chosen by the user.
+ */
+
+.print-only { display: none; }
+
+.print-dialog .print-options { display: flex; gap: 10px; }
+.print-dialog .print-options label { flex: 1; }
+.print-dialog .print-toggles { display: flex; flex-direction: column; gap: 4px; }
+.print-dialog .checkbox {
+  flex-direction: row; align-items: center; gap: 6px;
+  font-size: 12px; color: var(--ink);
+}
+.print-dialog .checkbox input { width: auto; }
+
+@media print {
+  /* Everything that is not the printed schedule. The dialog itself included —
+     nobody wants a screenshot of the print dialog on sheet one.
+
+     This works only because the print layout is portalled to <body> and is
+     therefore a sibling of #root rather than inside it. Rendered in place it
+     was hidden along with the app and the PDF came out blank. */
+  body > #root { display: none !important; }
+  body > .print-only { display: block !important; }
+
+  /* Without this, browsers drop background colours to save ink and the
+     critical path prints the same grey as everything else — which silently
+     removes the one thing the chart exists to show. */
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  html, body {
+    margin: 0; padding: 0; background: #fff;
+    font-family: ui-sans-serif, -apple-system, "Segoe UI", sans-serif;
+  }
+
+  .print-page {
+    position: relative;
+    overflow: hidden;
+    /* The last sheet must not force a trailing blank page. */
+    break-after: page;
+    page-break-after: always;
+  }
+  .print-page:last-child { break-after: auto; page-break-after: auto; }
+
+  /* ── Title block ───────────────────────────────────────────────────────── */
+
+  .print-titleblock {
+    display: flex; align-items: flex-start; justify-content: space-between;
+    gap: 16px; border-bottom: 1.5px solid #111; padding-bottom: 6px;
+  }
+  .print-titleblock h1 {
+    margin: 0; font-size: 15pt; font-weight: 700; letter-spacing: -0.01em; color: #111;
+  }
+  .print-subtitle { margin: 2px 0 0; font-size: 9pt; color: #444; }
+
+  .print-titleblock-meta {
+    display: flex; gap: 14px; margin: 0; flex-shrink: 0;
+  }
+  .print-titleblock-meta div { text-align: right; }
+  .print-titleblock-meta dt {
+    font-size: 6pt; text-transform: uppercase; letter-spacing: 0.08em; color: #777;
+  }
+  .print-titleblock-meta dd {
+    margin: 1px 0 0; font-size: 8.5pt; font-variant-numeric: tabular-nums; color: #111;
+  }
+
+  /* ── Table and chart ───────────────────────────────────────────────────── */
+
+  .print-grid { display: grid; }
+
+  .print-table-head {
+    display: flex; align-items: flex-end; gap: 4px;
+    border-bottom: 1px solid #111; padding-bottom: 2px;
+    font-size: 6pt; text-transform: uppercase; letter-spacing: 0.07em; color: #777;
+  }
+
+  .print-row {
+    display: flex; align-items: center; gap: 4px;
+    font-size: 8pt; color: #111;
+    border-bottom: 0.5px solid #e8e8e8;
+  }
+  /* A row name on the critical path is weighted, not coloured — the bar
+     already carries the colour, and red text is harder to read than black. */
+  .print-row.critical .print-col-name { font-weight: 600; }
+
+  .print-col-name {
+    flex: 1; min-width: 0;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .print-col-date {
+    width: 58px; flex-shrink: 0; text-align: right;
+    font-variant-numeric: tabular-nums; font-size: 7pt; color: #555;
+  }
+  .print-col-float {
+    width: 28px; flex-shrink: 0; text-align: right;
+    font-variant-numeric: tabular-nums; font-size: 7pt; color: #555;
+  }
+  .print-diamond { font-size: 6pt; margin-right: 3px; }
+  .print-phase { color: #999; font-size: 7pt; }
+
+  .print-axis { display: block; }
+  .print-axis text { font-size: 6.5pt; fill: #555; }
+  .print-axis .print-tick-major { fill: #111; font-weight: 600; }
+  .print-tick { stroke: #bbb; stroke-width: 0.5; }
+  .print-axis-rule { stroke: #111; stroke-width: 1; }
+
+  .print-chart { display: block; }
+  .print-weekend { fill: #f4f4f4; }
+  .print-row-band { fill: #fafafa; }
+
+  .print-bar { fill: #7d8894; }
+  .print-bar.critical { fill: #c0392b; }
+  .print-bar.complete { fill: #9aa3ab; }
+  .print-ghost { fill: #c9cdd2; }
+  .print-milestone { fill: #2c3038; }
+  .print-milestone.critical { fill: #c0392b; }
+
+  /* ── Legend ────────────────────────────────────────────────────────────── */
+
+  .print-legend {
+    display: flex; align-items: center; gap: 14px;
+    margin-top: 6px; padding-top: 4px; border-top: 0.5px solid #ccc;
+    font-size: 7pt; color: #555;
+  }
+  .print-legend .swatch {
+    display: inline-block; width: 14px; height: 6px;
+    margin-right: 4px; vertical-align: middle;
+  }
+  .print-legend .swatch.critical { background: #c0392b; }
+  .print-legend .swatch.normal { background: #7d8894; }
+  .print-legend .swatch.ghost { background: #c9cdd2; height: 3px; }
+  .print-legend .swatch.complete { background: #9aa3ab; }
+  .print-legend-note { margin-left: auto; color: #888; }
+
+  /* Space between the date/float columns and the first tick of the axis. */
+  .print-table-head .print-col-float { padding-right: 6px; }
+  .print-row .print-col-float { padding-right: 6px; }
+
+  /* ── Summary cover sheet ───────────────────────────────────────────────── */
+
+  /* Two columns: the prose is read once, the figures are checked repeatedly.
+     A single measure of text on a 17-inch sheet is mostly white paper. */
+  /* Capped rather than spanning the sheet. On a 17-inch landscape page a
+     full-width cover pushes the prose and the figures into opposite corners
+     with a metre of white between them; this reads as a designed sheet. */
+  .print-cover {
+    display: grid; grid-template-columns: minmax(0, 1fr) 220px;
+    gap: 30px; padding-top: 20px; align-items: start;
+    max-width: 780px;
+  }
+  .print-summary { max-width: none; }
+
+  .print-facts {
+    display: grid; grid-template-columns: 1fr auto;
+    gap: 5px 12px; margin: 0; padding: 12px 14px;
+    border: 0.5px solid #ccc; background: #fafafa;
+  }
+  .print-facts dt {
+    font-size: 7pt; text-transform: uppercase; letter-spacing: 0.06em; color: #777;
+    align-self: baseline;
+  }
+  .print-facts dd {
+    margin: 0; font-size: 8.5pt; text-align: right; color: #111;
+    font-variant-numeric: tabular-nums;
+  }
+  .print-facts .over { color: #c0392b; }
+  .print-facts .spare { color: #2f7d4f; }
+  .print-summary h2 {
+    margin: 0 0 12px; font-size: 12pt; font-weight: 600; line-height: 1.35; color: #111;
+  }
+  .print-summary p {
+    margin: 0 0 9px; font-size: 9.5pt; line-height: 1.5; color: #333;
+  }
+}

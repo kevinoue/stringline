@@ -74,6 +74,17 @@ export interface Project {
   data_date: IsoDate | null
   computed_finish: IsoDate | null
   status: string
+  /** Title-block overrides. Null means "use the project name". */
+  printTitle?: string | null
+  printSubtitle?: string | null
+}
+
+/** Project metadata carried alongside the schedule, for the printed heading. */
+export interface ScheduleProject {
+  name: string
+  deadline: IsoDate | null
+  printTitle: string | null
+  printSubtitle: string | null
 }
 
 export interface Dependency {
