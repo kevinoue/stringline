@@ -682,6 +682,24 @@ export function ProjectView({ projectId, onBack }: { projectId: string; onBack()
           onScroll={setScrollTop}
           categoryOf={categoryOf}
           focusCategory={focusCategory}
+          canReorder={role === null || role === 'owner' || role === 'planner'}
+          onReorder={(next) => {
+            // Optimistic: the rows move under the pointer, not a beat later.
+            // Reordering changes no dates, so there is nothing to be wrong
+            // about if the request fails — `load()` puts it back.
+            setDetails((current) => {
+              const copy = { ...current }
+              next.forEach((id, i) => {
+                const d = copy[id]
+                if (d) copy[id] = { ...d, sortOrder: i * 10 }
+              })
+              return copy
+            })
+            void api
+              .reorderTasks(projectId, next)
+              .catch((e) => setError(e instanceof ApiError ? e.message : String(e)))
+              .finally(() => void load())
+          }}
         />
         <Gantt
           categoryOf={categoryOf}
@@ -815,6 +833,11 @@ export function ProjectView({ projectId, onBack }: { projectId: string; onBack()
                 if (ok) setSelectedId(null)
               })
             }
+            onDuplicate={() => {
+              void mutate(() => api.duplicateTask(projectId, selected.id)).then((ok) => {
+                if (ok) setSelectedId(null)
+              })
+            }}
             onDelete={() => {
               if (confirm(`Delete “${selected.name}”? Its links go with it.`)) {
                 void mutate(() => api.deleteTask(projectId, selected.id)).then(() =>

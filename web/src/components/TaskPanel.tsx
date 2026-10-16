@@ -36,6 +36,8 @@ interface Props {
   /** Same for a trade — company-wide, but reachable without leaving the task. */
   onCreateCategory(name: string): Promise<Category | null>
   onDelete(): void
+  /** Copy this task with its steps and predecessors. */
+  onDuplicate(): void
   onAddDependency(predecessorId: string, type: string, lagDays: number): void
   onRemoveDependency(dependencyId: string): void
   onClose(): void
@@ -75,6 +77,7 @@ export function TaskPanel({
   onCreatePhase,
   onCreateCategory,
   onDelete,
+  onDuplicate,
   onAddDependency,
   onRemoveDependency,
   onClose,
@@ -315,6 +318,18 @@ export function TaskPanel({
         <div className="panel-actions">
           <button type="submit" disabled={busy}>
             Save changes
+          </button>
+          {/* Copies the steps and predecessors, not the successors or any
+              recorded actuals. The main use is splitting one task that a
+              template lumped together — a copy to edit beats an empty task. */}
+          <button
+            type="button"
+            className="ghost"
+            onClick={onDuplicate}
+            disabled={busy}
+            title="Copy this task, its steps and what it waits on"
+          >
+            Duplicate
           </button>
           <button type="button" className="danger" onClick={onDelete} disabled={busy}>
             Delete

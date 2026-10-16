@@ -499,18 +499,28 @@ console.log('\n== blocked feedback while dragging ==')
 
 console.log('\n== apply actually commits ==')
 {
-  const index = await page.evaluate(() => {
+  const picked = await page.evaluate(() => {
     const rows = [...document.querySelectorAll('.gantt g.row')]
     for (let i = rows.length - 1; i >= 0; i--) {
-      if (rows[i].querySelector('.bar:not(.complete)') && !rows[i].querySelector('.milestone')) return i
+      if (rows[i].querySelector('.bar:not(.complete)') && !rows[i].querySelector('.milestone')) {
+        const id = rows[i].getAttribute('data-task')
+        // The name comes from the same place as the id, so the table row and
+        // the chart row are guaranteed to be the same task.
+        const label = rows[i].querySelector('.bar-label')?.textContent?.trim() ?? null
+        return { index: i, taskId: id, label }
+      }
     }
-    return -1
+    return { index: -1, taskId: null, label: null }
   })
-  check('found a draggable bar', index >= 0, `row ${index}`)
-  const row = page.locator('.table-row').nth(index)
+  check('found a draggable bar', picked.index >= 0 && Boolean(picked.label),
+    `${picked.label ?? 'row ' + picked.index}`)
+  const row = page.locator('.table-row', { hasText: picked.label }).first()
   const name = (await row.locator('.name-text').textContent()).trim()
   const startBefore = (await row.locator('.col-date').first().textContent()).trim()
-  const target = page.locator('.gantt g.row').nth(index).locator('.bar').first()
+  // By id, not position: the chart virtualises and the table does not, so the
+  // same index means different rows in the two panes the moment the chart has
+  // been scrolled.
+  const target = page.locator(`.gantt g.row[data-task="${picked.taskId}"]`).locator('.bar').first()
   await target.scrollIntoViewIfNeeded()
   await page.waitForTimeout(400)
   const tb = await target.boundingBox()

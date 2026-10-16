@@ -339,6 +339,19 @@ export const api = {
   reorderPhases: (projectId: string, order: string[]) =>
     request<{ phases: Phase[] }>('PUT', `/projects/${projectId}/phases/order`, { order }),
 
+  /**
+   * Reorder the task list. Display only — no dates move, so no impact banner.
+   */
+  reorderTasks: (projectId: string, order: string[]) =>
+    request<void>('PUT', `/projects/${projectId}/tasks/order`, { order }),
+
+  /** Copy a task with its steps and predecessors. Successors and actuals are not copied. */
+  duplicateTask: (projectId: string, taskId: string) =>
+    request<MutationResult & { taskId: string }>(
+      'POST',
+      `/projects/${projectId}/tasks/${taskId}/duplicate`,
+    ),
+
   createTask: (projectId: string, body: { name: string; durationDays: number }) =>
     request<MutationResult>('POST', `/projects/${projectId}/tasks`, body),
 

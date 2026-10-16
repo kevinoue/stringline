@@ -796,6 +796,140 @@ router.put('/:projectId/phases/order', requirePlanner, async (req: Request, res:
   }
 })
 
+/**
+ * Reorder the task list.
+ *
+ * Display only. Row order is the plan's own order, deliberately not the dates
+ * — sorting by date means the list reshuffles every time anything moves, and
+ * unrelated rows leap around as though the project had been reorganised. So
+ * this changes what you look at and nothing about when anything happens,
+ * which is why it does not go through `applyAndExplain` and returns no impact.
+ *
+ * Unconstrained by dependencies on purpose. A row sitting above its own
+ * predecessor looks odd but breaks nothing, and refusing it would stop
+ * someone grouping rows by building or by trade — which is the main reason to
+ * reorder at all.
+ */
+router.put('/:projectId/tasks/order', requirePlanner, async (req: Request, res: Response) => {
+  const projectId = param(req, 'projectId')
+  const { order } = req.body ?? {}
+
+  if (!Array.isArray(order) || order.length === 0) {
+    res.status(400).json({ error: 'order must be a non-empty array of task ids' })
+    return
+  }
+
+  try {
+    const ok = await transaction(async (client) => {
+      if (!(await ownsProject(client, projectId, req.company!.id))) return false
+      for (const [index, id] of order.entries()) {
+        await client.query(
+          'UPDATE tasks SET sort_order = $3, updated_at = NOW() WHERE id = $1 AND project_id = $2',
+          [id, projectId, index * 10],
+        )
+      }
+      return true
+    })
+
+    if (!ok) {
+      res.status(404).json({ error: 'Project not found' })
+      return
+    }
+    broadcast(projectId, 'order.changed', {})
+    res.status(204).end()
+  } catch (error) {
+    handleError(res, error, 'reorder-tasks')
+  }
+})
+
+/**
+ * Duplicate a task, with its steps.
+ *
+ * The reason this exists: a template groups work the way one property happened
+ * to write it down, and splitting "Cottages and Love Shack" into two is far
+ * easier starting from a copy than from an empty task.
+ *
+ * Predecessors come with it, successors do not. A copy almost always waits on
+ * the same things the original did; what waits on *it* is a decision only the
+ * person splitting the work can make, and guessing would silently rewire the
+ * network.
+ *
+ * Actuals are never copied. They are a record of something that happened to
+ * one task, and duplicating them would invent history for work nobody has
+ * started.
+ */
+router.post('/:projectId/tasks/:taskId/duplicate', requirePlanner, async (req, res: Response) => {
+  const projectId = param(req, 'projectId')
+  const taskId = param(req, 'taskId')
+
+  try {
+    const payload = await transaction(async (client) => {
+      if (!(await ownsProject(client, projectId, req.company!.id))) return null
+
+      const { rows } = await client.query<{ name: string }>(
+        'SELECT name FROM tasks WHERE id = $1 AND project_id = $2',
+        [taskId, projectId],
+      )
+      if (rows.length === 0) return null
+
+      let newId = ''
+      const change = await applyAndExplain(
+        client,
+        {
+          projectId,
+          actorId: req.user!.id,
+          action: 'task.duplicate',
+          oldValue: rows[0]!.name,
+        },
+        async () => {
+          const { rows: made } = await client.query<{ id: string }>(
+            `INSERT INTO tasks
+               (project_id, phase_id, category_id, name, duration_days, calendar_id,
+                constraint_type, constraint_date, visibility, sort_order)
+             SELECT project_id, phase_id, category_id, name || ' (copy)', duration_days,
+                    calendar_id, constraint_type, constraint_date, visibility,
+                    -- Immediately after the original, so a split reads in order
+                    -- rather than appearing at the bottom of the list.
+                    sort_order + 1
+               FROM tasks WHERE id = $1
+             RETURNING id`,
+            [taskId],
+          )
+          newId = made[0]!.id
+
+          await client.query(
+            `INSERT INTO steps (task_id, name, duration_days, sort_order)
+             SELECT $2, name, duration_days, sort_order FROM steps WHERE task_id = $1`,
+            [taskId, newId],
+          )
+
+          await client.query(
+            `INSERT INTO dependencies (project_id, predecessor_id, successor_id, type, lag_days)
+             SELECT project_id, predecessor_id, $2, type, lag_days
+               FROM dependencies WHERE successor_id = $1`,
+            [taskId, newId],
+          )
+        },
+      )
+      return { change, newId }
+    })
+
+    if (!payload) {
+      res.status(404).json({ error: 'Task not found' })
+      return
+    }
+    broadcast(projectId, 'schedule.changed', { finishAfter: payload.change.finishAfter })
+    res.status(201).json({
+      taskId: payload.newId,
+      schedule: payload.change.result,
+      impact: payload.change.impact,
+      finishMovedDays: payload.change.finishMovedDays,
+    })
+  } catch (error) {
+    handleError(res, error, 'duplicate-task')
+  }
+})
+
 const UPDATABLE: Record<string, string> = {
   name: 'name',
   durationDays: 'duration_days',

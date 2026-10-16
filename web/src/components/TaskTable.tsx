@@ -32,6 +32,16 @@ interface Props {
   hasSteps: Set<string>
   expanded: Set<string>
   onToggle(taskId: string): void
+  /**
+   * Reorder by dragging a row.
+   *
+   * Display only — row order never drives dates — so this is unconstrained by
+   * dependencies. A row above its own predecessor looks odd and breaks
+   * nothing, and forbidding it would stop you grouping rows by building or by
+   * trade, which is the main reason to reorder at all.
+   */
+  onReorder(order: string[]): void
+  canReorder: boolean
 }
 
 /** Working days a task has slipped against the baseline, or null if unbaselined. */
@@ -61,7 +71,12 @@ export function TaskTable({
   hasSteps,
   expanded,
   onToggle,
+  onReorder,
+  canReorder,
 }: Props) {
+  /** The row being dragged, and the row it is currently hovering over. */
+  const [dragging, setDragging] = useState<string | null>(null)
+  const [over, setOver] = useState<string | null>(null)
   const tableRef = useRef<HTMLDivElement>(null)
   const bodyRef = useRef<HTMLDivElement>(null)
   const [widths, setWidths] = useState<number[]>([210, 38, 82, 108, 40])
@@ -235,10 +250,44 @@ export function TaskTable({
               className={
                 `table-row${selectedId === id ? ' selected' : ''}` +
                 `${task.isCritical ? ' critical' : ''}` +
-                `${focusCategory && categoryOf.get(id) !== focusCategory ? ' dimmed' : ''}`
+                `${focusCategory && categoryOf.get(id) !== focusCategory ? ' dimmed' : ''}` +
+                `${dragging === id ? ' dragging' : ''}` +
+                `${over === id && dragging !== id ? ' drop-target' : ''}`
               }
               style={{ height: ROW_HEIGHT }}
               onClick={() => onSelect(id)}
+              draggable={canReorder}
+              onDragStart={(e) => {
+                setDragging(id)
+                e.dataTransfer.effectAllowed = 'move'
+                // Firefox refuses to start a drag without data set.
+                e.dataTransfer.setData('text/plain', id)
+              }}
+              onDragEnd={() => {
+                setDragging(null)
+                setOver(null)
+              }}
+              onDragOver={(e) => {
+                if (!dragging) return
+                e.preventDefault()
+                if (over !== id) setOver(id)
+              }}
+              onDrop={(e) => {
+                e.preventDefault()
+                const from = dragging
+                setDragging(null)
+                setOver(null)
+                if (!from || from === id) return
+                // Reordered over the *task* list, not the displayed rows —
+                // `order` has step ids interleaved when a task is expanded,
+                // and sending those to a task-ordering endpoint would be
+                // meaningless.
+                const tasks = order.filter((rowId) => !steps.has(rowId))
+                const next = tasks.filter((t) => t !== from)
+                const at = next.indexOf(id)
+                next.splice(at < 0 ? next.length : at, 0, from)
+                onReorder(next)
+              }}
             >
               <span className="col-name" title={task.name}>
                 {/* Only where there is something to expand. A chevron on a
