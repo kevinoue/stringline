@@ -956,6 +956,53 @@ console.log('\n== deleting a project ==')
   await page.screenshot({ path: `${OUT}/12-projects.png` })
 }
 
+console.log('\n== renaming a project ==')
+{
+  // Renaming was possible through the API and nowhere in the app, and the
+  // project view did not even show which project you were in. Renamed back at
+  // the end of the block: the other suites find this project by name.
+  // The delete block above leaves us on the project list; the name field
+  // lives in a project's own toolbar.
+  const target = page.locator('.project-card:has-text("Stonecliffe west wing refurbishment")')
+  await ((await target.count()) ? target.first() : page.locator('.project-card').first()).click()
+  const field = page.locator('.project-name')
+  await field.waitFor({ timeout: 10_000 })
+  const original = await field.inputValue()
+  check('the project name is shown, and editable', original.length > 0, original)
+
+  await field.fill('Renamed in the browser')
+  await field.blur()
+  await page.waitForTimeout(900)
+  check('typing a name and looking away saves it',
+    (await field.inputValue()) === 'Renamed in the browser', await field.inputValue())
+
+  // Blank is a slip, not an instruction.
+  await field.fill('   ')
+  await field.blur()
+  await page.waitForTimeout(700)
+  check('blanking it restores the name rather than saving nothing',
+    (await field.inputValue()) === 'Renamed in the browser', await field.inputValue())
+
+  // Escape has to discard. Blur fires straight after it, and reading the
+  // draft from state there gets the half-typed value — the reason this needs
+  // a flag rather than just resetting state.
+  await field.fill('Half-typed, abandoned')
+  await field.press('Escape')
+  await page.waitForTimeout(700)
+  check('escape discards the edit',
+    (await field.inputValue()) === 'Renamed in the browser', await field.inputValue())
+
+  await field.fill(original)
+  await field.press('Enter')
+  await page.waitForTimeout(900)
+  check('enter saves, and the original name is back',
+    (await field.inputValue()) === original, await field.inputValue())
+
+  // Back to the list, because the block after this one starts there.
+  await page.locator('button:has-text("← Projects")').click()
+  await page.waitForSelector('.project-card', { timeout: 10_000 })
+}
+
 console.log('\n== licence obligations ==')
 {
   // AGPL section 13: Stringline is offered over a network, so users must be able

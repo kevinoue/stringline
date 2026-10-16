@@ -82,7 +82,7 @@ check('it opens', true)
 const paperOptions = await page.locator('.print-dialog select').first().locator('option').count()
 check('offers several paper sizes', paperOptions >= 5, `${paperOptions} sizes`)
 
-const title = await page.locator('.print-dialog label').filter({ hasText: /^Title$/ }).locator('input').inputValue()
+const title = await page.locator('.print-dialog label').filter({ hasText: /^Title on the printout$/ }).locator('input').inputValue()
 check('the title is prefilled from the project',
   title.includes('Stonecliffe'), title)
 

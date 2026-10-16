@@ -326,6 +326,26 @@ function ProjectList({
                 {p.start_date} → {p.computed_finish ?? 'not yet scheduled'}
               </span>
             </button>
+            {/* Renaming is also possible by clicking the name inside the
+                project, but this is where someone looking at a list of badly
+                named projects actually is. */}
+            <button
+              className="project-rename"
+              title={`Rename “${p.name}”`}
+              aria-label={`Rename ${p.name}`}
+              onClick={async () => {
+                const next = prompt('Rename this project', p.name)?.trim()
+                if (!next || next === p.name) return
+                try {
+                  await api.updateProject(p.id, { name: next })
+                  await load()
+                } catch (err) {
+                  setError(err instanceof ApiError ? err.message : String(err))
+                }
+              }}
+            >
+              ✎
+            </button>
             <button
               className="project-delete"
               title={`Delete ${p.name}`}

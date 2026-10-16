@@ -145,6 +145,22 @@ input {
   color: var(--ink-soft); border-color: var(--line);
 }
 .project-delete:hover:not(:disabled) { color: var(--bad); border-color: #e8c0b8; background: #fdf0ee; }
+.project-rename {
+  flex: none; width: 38px; font-size: 14px; line-height: 1;
+  color: var(--ink-soft); border-color: var(--line);
+}
+.project-rename:hover:not(:disabled) { color: var(--ink); border-color: var(--line-strong); }
+
+/* The project name in the toolbar. Styled as a heading that happens to be
+   editable, not as a form field — it is the title of the page. */
+.project-name {
+  font: inherit; font-size: 16px; font-weight: 600; letter-spacing: -0.01em;
+  padding: 3px 6px; min-width: 14ch; width: 26ch; max-width: 34ch;
+  border-color: transparent; background: transparent;
+  text-overflow: ellipsis;
+}
+.project-name:hover:not(:disabled) { border-color: var(--line-strong); background: var(--panel); }
+.project-name:focus { border-color: var(--ink-soft); background: var(--panel); width: 34ch; }
 .empty { color: var(--ink-soft); padding: 12px 0; }
 .new-project select { font: inherit; padding: 7px 10px; border: 1px solid var(--line-strong); border-radius: var(--radius); background: var(--panel); }
 .template-hint { margin: -8px 0 16px; font-size: 13px; color: var(--ink); }

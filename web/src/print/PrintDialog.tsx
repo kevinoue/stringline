@@ -202,7 +202,7 @@ export function PrintDialog({
           </div>
 
           <label>
-            Title
+            Title on the printout
             <input
               value={title}
               onChange={(e) => setTitle(e.target.value)}
@@ -219,7 +219,8 @@ export function PrintDialog({
             />
           </label>
           <p className="hint">
-            Both are kept with the project, so the next print starts where this one left off.
+            Kept with the project, so the next print starts where this one left off. This changes
+            the paper only — to rename the project itself, click its name in the toolbar.
             {saved && <strong> Saved.</strong>}
           </p>
 

@@ -60,6 +60,9 @@ export function ProjectView({ projectId, onBack }: { projectId: string; onBack()
   const [adding, setAdding] = useState(false)
   const [managingPhases, setManagingPhases] = useState(false)
   const [printing, setPrinting] = useState(false)
+  const [nameDraft, setNameDraft] = useState('')
+  /** Set by Escape so the blur that follows discards rather than saves. */
+  const abandoning = useRef(false)
   const [meta, setMeta] = useState<ScheduleProject | null>(null)
   const [newName, setNewName] = useState('')
   const [newDuration, setNewDuration] = useState('1')
@@ -76,6 +79,7 @@ export function ProjectView({ projectId, onBack }: { projectId: string; onBack()
     // -scoped, so it rides along rather than being fetched per project.
     api.listCategories().then((r) => setCategoryLabel(r.label)).catch(() => {})
     setMeta(data.project)
+    setNameDraft(data.project.name)
     // Recomputed on every load, so it is never stale relative to the chart
     // beside it. A summary that disagrees with the bars is worse than none.
     api.summary(projectId).then(setSummary).catch(() => setSummary(null))
@@ -106,6 +110,32 @@ export function ProjectView({ projectId, onBack }: { projectId: string; onBack()
       )
       .map((x) => x.t.id)
   }, [schedule, details])
+
+  const saveName = async (): Promise<void> => {
+    // Escape sets this, because blur fires immediately afterwards and would
+    // otherwise save the half-typed name: `setNameDraft` has not applied yet
+    // when the blur handler reads it, so resetting state alone does nothing.
+    if (abandoning.current) {
+      abandoning.current = false
+      setNameDraft(meta?.name ?? '')
+      return
+    }
+    const next = nameDraft.trim()
+    if (!next || next === meta?.name) {
+      // Blank is a slip, not an instruction. Put the real name back rather
+      // than saving an empty one or leaving the box looking empty.
+      setNameDraft(meta?.name ?? '')
+      return
+    }
+    try {
+      const r = await api.updateProject(projectId, { name: next })
+      setMeta((m) => (m ? { ...m, name: r.project.name } : m))
+      setNameDraft(r.project.name)
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : String(e))
+      setNameDraft(meta?.name ?? '')
+    }
+  }
 
   /** Task id -> category id, for the chart's stripe and focus. */
   const categoryOf = useMemo(
@@ -276,6 +306,32 @@ export function ProjectView({ projectId, onBack }: { projectId: string; onBack()
         <button className="ghost" onClick={onBack}>
           ← Projects
         </button>
+        {/*
+          The project name, and the only place to rename one.
+          
+          It was missing entirely: nothing in this view said which project you
+          were looking at except the summary headline, and renaming was
+          possible through the API but nowhere in the app. Editable in place
+          because that is where someone looks for it — at the title.
+        */}
+        <input
+          className="project-name"
+          value={nameDraft}
+          disabled={busy}
+          onChange={(e) => setNameDraft(e.target.value)}
+          onBlur={() => void saveName()}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') e.currentTarget.blur()
+            // Escape restores what the server has, so a half-typed name is
+            // never saved by looking away.
+            if (e.key === 'Escape') {
+              abandoning.current = true
+              e.currentTarget.blur()
+            }
+          }}
+          title="Click to rename this project"
+          aria-label="Project name"
+        />
         {/*
           The project start, editable in place. It is the date every
           unconstrained task hangs off, and it used to be write-once — a
