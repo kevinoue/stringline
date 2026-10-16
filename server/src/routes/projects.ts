@@ -10,9 +10,10 @@ import { Router, type Request, type Response } from 'express'
 import { transaction } from '../db/pool.js'
 import { authenticate, requirePlanner } from '../middleware/auth.js'
 import { checkCompanyLimit, requireCompany } from '../middleware/company.js'
-import { ScheduleError } from '../scheduler/index.js'
+import { projectCalendars, ScheduleError } from '../scheduler/index.js'
 import { previewMove, unconstrainedStart, type MoveMode } from '../services/moves.js'
 import { removeStoredFiles } from '../services/files.js'
+import { loadProjectSteps, sequenceSteps } from '../services/steps.js'
 import { buildSummary } from '../services/summary.js'
 import {
   createProjectFromTemplate,
@@ -453,6 +454,34 @@ router.get('/:projectId/schedule', async (req: Request, res: Response) => {
         [param(req, 'projectId')],
       )
 
+      /*
+       * Steps, laid out along their task's own calendar from its solved start.
+       *
+       * Computed here rather than stored: a step's dates are entirely derived
+       * from where its task landed, and storing them would mean a second
+       * thing to keep in sync with every reschedule.
+       */
+      const stepRows = await loadProjectSteps(client, param(req, 'projectId'))
+      const steps: unknown[] = []
+      if (stepRows.size > 0) {
+        // Only loaded when something needs it. Sequencing steps needs the
+        // calendars, and most projects have no steps at all — no reason to
+        // rebuild the whole schedule input for them.
+        const input = await loadScheduleInput(client, param(req, 'projectId'))
+        const calendars = projectCalendars(input)
+        const calendarOf = new Map(input.tasks.map((t) => [t.id, t.calendarId]))
+        for (const [taskId, rows] of stepRows) {
+          const solved = result.tasks[taskId]
+          if (!solved) continue
+          // A step runs on its task's calendar, not the project's: a Tue–Sat
+          // crew's steps have to fall on days that crew works.
+          const calendar =
+            calendars.get(calendarOf.get(taskId) ?? input.defaultCalendarId) ??
+            calendars.get(input.defaultCalendarId)!
+          steps.push(...sequenceSteps(calendar, solved.earlyStart, rows))
+        }
+      }
+
       // Only the categories actually used by this project, not the company's
       // whole list. The chart's legend and filter should offer the trades on
       // this job, not every trade the company has ever defined.
@@ -480,6 +509,7 @@ router.get('/:projectId/schedule', async (req: Request, res: Response) => {
         details: details.rows,
         phases: phases.rows,
         categories: categories.rows,
+        steps,
         project: meta.rows[0],
       }
     })

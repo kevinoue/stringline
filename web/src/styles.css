@@ -795,3 +795,68 @@ button.danger:hover:not(:disabled) { background: #fdf0ee; }
 }
 
 .label-edit input { font: inherit; font-size: 12px; padding: 2px 6px; width: 130px; }
+
+/* ── Steps ────────────────────────────────────────────────────────────────── */
+
+/* A step is part of a task, not a peer of one, so everything here is slighter
+   than its task equivalent. Drawn the same weight, an expanded task of five
+   steps reads as six tasks. */
+.step-chevron {
+  flex: none; width: 16px; padding: 0; margin-right: 2px;
+  border: 0; background: none; color: var(--ink);
+  /* 10px in muted grey was all but invisible, which made a task with steps
+     look identical to one without — and the chevron is the only thing saying
+     there is anything to open. */
+  font-size: 13px; line-height: 1; cursor: pointer;
+}
+.step-chevron:hover { color: var(--bar-critical); background: none; }
+/* Keeps names aligned whether or not a row has steps. */
+.step-chevron-gap { flex: none; width: 16px; }
+
+.table-row.step-row { background: var(--bg); font-size: 12px; color: var(--ink-soft); }
+.table-row.step-row:hover { background: var(--bg); }
+.table-row.step-row.done .name-text { text-decoration: line-through; opacity: 0.6; }
+.step-indent { flex: none; width: 16px; }
+.step-mark { flex: none; margin-right: 5px; font-size: 11px; }
+
+.step-bar { fill: var(--bar); opacity: 0.75; }
+.step-bar.critical { fill: var(--bar-critical); opacity: 0.6; }
+.step-bar.complete { fill: var(--bar-complete); opacity: 0.6; }
+.step-check { fill: var(--panel); stroke: var(--ink-soft); stroke-width: 1.2; }
+.step-check.done { fill: var(--ink-soft); }
+.step-label { font-size: 10px; fill: var(--ink-soft); pointer-events: none; }
+
+/* A bar that can be opened says so on hover, since the gesture is a
+   double-click and nothing else would hint at it. */
+.row.expandable .bar { cursor: grab; }
+.row.expandable:hover .bar { filter: brightness(0.94); }
+
+/* ── Steps, in the task panel ─────────────────────────────────────────────── */
+
+.steps h3 {
+  margin: 4px 0 6px; font-size: 12px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.06em; color: var(--ink-soft);
+}
+.steps h3 .sub { text-transform: none; letter-spacing: 0; font-weight: 400; }
+.step-list { list-style: none; margin: 0 0 8px; padding: 0; display: grid; gap: 2px; }
+.step-list li {
+  display: flex; align-items: center; gap: 6px;
+  padding: 3px 0; font-size: 12px; border-bottom: 1px solid var(--line);
+}
+.step-list li.done .step-name { text-decoration: line-through; color: var(--ink-soft); }
+.step-tick {
+  flex: none; width: 20px; padding: 0; border: 0; background: none;
+  font-size: 13px; line-height: 1; cursor: pointer; color: var(--ink-soft);
+}
+.step-tick:hover:not(:disabled) { color: var(--ink); background: none; }
+.step-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.step-days { flex: none; font-size: 11px; color: var(--ink-soft); font-variant-numeric: tabular-nums; }
+.step-days.check { font-style: italic; }
+.step-days .sub { font-size: 10px; }
+.step-actions { flex: none; display: flex; gap: 1px; }
+.step-actions button { padding: 1px 4px; font-size: 11px; }
+.step-days { min-width: 34px; text-align: right; }
+
+.step-add { display: flex; gap: 4px; }
+.step-add input[type='text'], .step-add input:not([type]) { flex: 1; min-width: 0; }
+.step-add input[type='number'] { width: 58px; flex: none; }

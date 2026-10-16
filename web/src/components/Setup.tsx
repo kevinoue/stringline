@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { api, ApiError, setToken, SOURCE_URL } from '../api/client.js'
+import { api, ApiError, setRole, setToken, SOURCE_URL } from '../api/client.js'
 
 /**
  * First-run setup for a self-hosted Stringline.
@@ -45,6 +45,8 @@ export function Setup({ onDone }: { onDone(): void }) {
     try {
       const result = await api.setup({ setupToken, companyName, slug, email, password, name })
       setToken(result.token)
+      // Whoever claims an instance is its owner.
+      setRole('owner')
       onDone()
     } catch (err) {
       setError(err instanceof ApiError ? err.message : String(err))

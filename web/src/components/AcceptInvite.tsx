@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { api, ApiError, setToken, SOURCE_URL } from '../api/client.js'
+import { api, ApiError, setRole, setToken, SOURCE_URL } from '../api/client.js'
 import type { Role } from '../api/types.js'
 
 const ROLE_LABELS: Record<Role, string> = {
@@ -61,6 +61,7 @@ export function AcceptInvite({ code, onDone }: { code: string; onDone(): void })
     try {
       const result = await api.acceptInvite(code, password, name)
       setToken(result.token)
+      setRole(result.role)
       onDone()
     } catch (err) {
       setError(err instanceof ApiError ? err.message : String(err))

@@ -1,5 +1,5 @@
 import { useLayoutEffect, useRef, useState } from 'react'
-import type { Baseline, Schedule } from '../api/types.js'
+import type { Baseline, Schedule, Step } from '../api/types.js'
 import { ROW_HEIGHT } from '../gantt/Gantt.js'
 
 interface Props {
@@ -21,6 +21,17 @@ interface Props {
    */
   categoryOf: Map<string, string>
   focusCategory: string | null
+  /**
+   * Step rows, keyed by id. `order` interleaves step ids among task ids when
+   * a task is expanded; anything found here is a step row, anything not is a
+   * task row. Implicit, but it keeps both panes consuming the same flat list
+   * of row ids, which is what keeps them in lockstep.
+   */
+  steps: Map<string, Step>
+  /** Tasks that have steps at all, so a chevron is only drawn where it works. */
+  hasSteps: Set<string>
+  expanded: Set<string>
+  onToggle(taskId: string): void
 }
 
 /** Working days a task has slipped against the baseline, or null if unbaselined. */
@@ -46,6 +57,10 @@ export function TaskTable({
   onScroll,
   categoryOf,
   focusCategory,
+  steps,
+  hasSteps,
+  expanded,
+  onToggle,
 }: Props) {
   const tableRef = useRef<HTMLDivElement>(null)
   const bodyRef = useRef<HTMLDivElement>(null)
@@ -56,6 +71,9 @@ export function TaskTable({
    * they can be folded away when the chart matters more than the figures.
    */
   const [compact, setCompact] = useState(false)
+
+  /** Whether anything in this project has steps at all. */
+  const anySteps = hasSteps.size > 0
 
   /**
    * Size every column to its own widest cell, header included.
@@ -91,8 +109,42 @@ export function TaskTable({
         // badge — and left the column too narrow to show it.
         let width = textWidth(cell)
 
-        // The name is deliberately clipped with an ellipsis, so add back
-        // whatever the clip is currently hiding.
+        /*
+         * The name cell is measured as flex actually lays it out, not as text.
+         *
+         * It is the only column holding boxes rather than bare strings — an
+         * expand chevron, a milestone dot, a status pill with padding and a
+         * background, the step indent. A Range measures *text*, so an empty
+         * 16px spacer counts as nothing and a pill counts as its label
+         * without its padding. Every one of those is width the column needs
+         * and does not ask for, and the result is a name that keeps its
+         * ellipsis no matter how much room is going spare.
+         *
+         * Summing each child's border box plus margins is exactly what the
+         * flex row needs; the clipped name is then added back at full length,
+         * since its own box is however wide the clip left it.
+         */
+        const children = Array.from(cell.children) as HTMLElement[]
+        if (children.length > 0) {
+          const cellStyle = getComputedStyle(cell)
+          width = 0
+          for (const child of children) {
+            const style = getComputedStyle(child)
+            width +=
+              child.getBoundingClientRect().width +
+              parseFloat(style.marginLeft) +
+              parseFloat(style.marginRight)
+          }
+          // The flex gaps between them, and the cell's own padding. Both are
+          // width the row occupies and neither belongs to any child, so
+          // summing children alone under-counts by exactly this much.
+          const gap = parseFloat(cellStyle.columnGap) || 0
+          width +=
+            gap * Math.max(0, children.length - 1) +
+            (parseFloat(cellStyle.paddingLeft) || 0) +
+            (parseFloat(cellStyle.paddingRight) || 0)
+        }
+
         const clipped = cell.querySelector<HTMLElement>('.name-text')
         if (clipped) {
           width += Math.max(0, textWidth(clipped) - clipped.getBoundingClientRect().width)
@@ -148,6 +200,32 @@ export function TaskTable({
         }}
       >
         {order.map((id) => {
+          const step = steps.get(id)
+          if (step) {
+            return (
+              <div
+                key={id}
+                className={'table-row step-row' + (step.status === 'complete' ? ' done' : '')}
+                style={{ height: ROW_HEIGHT }}
+                onClick={() => onSelect(step.taskId)}
+              >
+                <span className="col-name" title={step.name}>
+                  <span className="step-indent" aria-hidden />
+                  {/* A zero-day step is a tick-box, not a bar — so it reads as
+                      one here too, rather than as a task with no duration. */}
+                  <span className="step-mark" aria-hidden>
+                    {step.isCheck ? (step.status === 'complete' ? '☑' : '☐') : '↳'}
+                  </span>
+                  <span className="name-text">{step.name}</span>
+                </span>
+                <span className="col-num">{step.durationDays || '—'}</span>
+                {!compact && <span className="col-date">{step.isCheck ? '' : step.start}</span>}
+                {!compact && <span className="col-date">{step.isCheck ? '' : step.finish}</span>}
+                <span className="col-num" />
+              </div>
+            )
+          }
+
           const task = schedule.tasks[id]
           if (!task) return null
           const variance = slip(baseline, id, task.earlyFinish)
@@ -163,6 +241,27 @@ export function TaskTable({
               onClick={() => onSelect(id)}
             >
               <span className="col-name" title={task.name}>
+                {/* Only where there is something to expand. A chevron on a
+                    task with no steps is a control that does nothing. */}
+                {hasSteps.has(id) ? (
+                  <button
+                    className="step-chevron"
+                    aria-label={expanded.has(id) ? `Collapse ${task.name}` : `Expand ${task.name}`}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      onToggle(id)
+                    }}
+                  >
+                    {expanded.has(id) ? '▾' : '▸'}
+                  </button>
+                ) : (
+                  // The blank keeps names aligned with the rows that do have a
+                  // chevron — but only when some row has one. A project with
+                  // no steps anywhere pays nothing for a feature it is not
+                  // using, which matters because the name column is the only
+                  // thing competing with the chart for width.
+                  anySteps && <span className="step-chevron-gap" aria-hidden />
+                )}
                 {task.isMilestone && <span className="milestone-dot" aria-hidden />}
                 {/*
                   The name ellipses on its own rather than on the cell, so a

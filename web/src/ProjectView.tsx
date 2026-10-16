@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { api, ApiError, SOURCE_URL } from './api/client.js'
+import { api, ApiError, getRole, SOURCE_URL } from './api/client.js'
 import type {
   Baseline,
   Dependency,
@@ -9,6 +9,7 @@ import type {
   Category,
   Phase,
   ScheduleProject,
+  Step,
   TaskDetail,
 } from './api/types.js'
 import { ImpactBanner } from './components/ImpactBanner.js'
@@ -43,6 +44,8 @@ export function ProjectView({ projectId, onBack }: { projectId: string; onBack()
   const [details, setDetails] = useState<Record<string, TaskDetail>>({})
   const [phases, setPhases] = useState<Phase[]>([])
   const [categories, setCategories] = useState<Category[]>([])
+  const [steps, setSteps] = useState<Step[]>([])
+  const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [categoryLabel, setCategoryLabel] = useState('Trade')
   const [focusCategory, setFocusCategory] = useState<string | null>(null)
   const [colourBy, setColourBy] = useState<'critical' | 'category'>('critical')
@@ -75,6 +78,7 @@ export function ProjectView({ projectId, onBack }: { projectId: string; onBack()
     setDetails(Object.fromEntries(data.details.map((d) => [d.id, d])))
     setPhases(data.phases)
     setCategories(data.categories)
+    setSteps(data.steps)
     // The company's word for this dimension — Trade, Department, Crew. Company
     // -scoped, so it rides along rather than being fetched per project.
     api.listCategories().then((r) => setCategoryLabel(r.label)).catch(() => {})
@@ -136,6 +140,56 @@ export function ProjectView({ projectId, onBack }: { projectId: string; onBack()
       setNameDraft(meta?.name ?? '')
     }
   }
+
+  /** Steps by their parent task, in order. */
+  const stepsByTask = useMemo(() => {
+    const map = new Map<string, Step[]>()
+    for (const step of [...steps].sort((a, b) => a.sortOrder - b.sortOrder)) {
+      const list = map.get(step.taskId)
+      if (list) list.push(step)
+      else map.set(step.taskId, [step])
+    }
+    return map
+  }, [steps])
+
+  const stepById = useMemo(() => new Map(steps.map((s) => [s.id, s])), [steps])
+  const hasSteps = useMemo(() => new Set(stepsByTask.keys()), [stepsByTask])
+
+  /**
+   * The rows both panes draw, task ids with step ids interleaved beneath any
+   * expanded task.
+   *
+   * One flat list rather than a tree, because the table and the chart have to
+   * agree on every row's index to stay in lockstep while scrolling — and they
+   * already did that for a flat list of tasks.
+   */
+  const displayOrder = useMemo(() => {
+    const rows: string[] = []
+    for (const taskId of order) {
+      rows.push(taskId)
+      if (!expanded.has(taskId)) continue
+      for (const step of stepsByTask.get(taskId) ?? []) rows.push(step.id)
+    }
+    return rows
+  }, [order, expanded, stepsByTask])
+
+  // A task that loses its last step must not stay in the expanded set, or it
+  // would re-expand to nothing the moment it gained one again.
+  useEffect(() => {
+    setExpanded((current) => {
+      const next = new Set([...current].filter((id) => hasSteps.has(id)))
+      return next.size === current.size ? current : next
+    })
+  }, [hasSteps])
+
+  const toggleExpanded = useCallback((taskId: string) => {
+    setExpanded((current) => {
+      const next = new Set(current)
+      if (next.has(taskId)) next.delete(taskId)
+      else next.add(taskId)
+      return next
+    })
+  }, [])
 
   /** Task id -> category id, for the chart's stripe and focus. */
   const categoryOf = useMemo(
@@ -587,7 +641,11 @@ export function ProjectView({ projectId, onBack }: { projectId: string; onBack()
         <TaskTable
           schedule={schedule}
           baseline={baseline}
-          order={order}
+          order={displayOrder}
+          steps={stepById}
+          hasSteps={hasSteps}
+          expanded={expanded}
+          onToggle={toggleExpanded}
           selectedId={selectedId}
           onSelect={setSelectedId}
           headerHeight={HEADER_HEIGHT}
@@ -605,7 +663,11 @@ export function ProjectView({ projectId, onBack }: { projectId: string; onBack()
           schedule={schedule}
           baseline={baseline}
           dependencies={dependencies}
-          order={order}
+          order={displayOrder}
+          steps={stepById}
+          hasSteps={hasSteps}
+          expanded={expanded}
+          onToggle={toggleExpanded}
           dayWidth={dayWidth}
           onZoom={zoomTo}
           height={chartHeight}
@@ -668,6 +730,28 @@ export function ProjectView({ projectId, onBack }: { projectId: string; onBack()
             phases={phases}
             categories={categories}
             categoryLabel={categoryLabel}
+            steps={stepsByTask.get(selected.id) ?? []}
+            // Only owners and planners restructure. A field user ticking a
+            // step off is the whole point of the role, and that path is
+            // separate.
+            canEditSteps={getRole() === 'owner' || getRole() === 'planner'}
+            onAddStep={(name, days) =>
+              void mutate(() => api.addStep(projectId, selected.id, name, days))
+            }
+            onUpdateStep={(stepId, changes) =>
+              void mutate(() => api.updateStep(projectId, selected.id, stepId, changes))
+            }
+            onDeleteStep={(stepId) =>
+              void mutate(() => api.deleteStep(projectId, selected.id, stepId))
+            }
+            onReorderSteps={(order) => {
+              // No dates move, so this does not go through `mutate` and its
+              // impact banner — only the order inside the task changes.
+              void api
+                .reorderSteps(projectId, selected.id, order)
+                .then(() => load())
+                .catch((e) => setError(e instanceof ApiError ? e.message : String(e)))
+            }}
             busy={busy}
             onCreatePhase={async (name) => {
               try {

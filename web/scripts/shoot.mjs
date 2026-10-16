@@ -284,11 +284,14 @@ console.log('\n== layout fills the window ==')
     cols: document.querySelectorAll('.table-row:first-child > *').length,
   }))
   console.log('    folded:', JSON.stringify(folded))
-  check('folding the dates shrinks the list further', folded.table < wide - 140,
-    `${wide} → ${folded.table}`)
+  // A proportion rather than a pixel count: the point is that folding gives
+  // the chart a meaningful share back, and a magic constant drifts with font
+  // metrics and with anything added to the name column.
+  check('folding the dates shrinks the list further', folded.table < wide * 0.8,
+    `${wide} → ${folded.table}, ${Math.round((1 - folded.table / wide) * 100)}% narrower`)
   check('and drops those columns entirely', folded.cols === 3, `${folded.cols} columns`)
-  check('the chart takes the space', folded.chart > layout.chartW + 140,
-    `${layout.chartW} → ${folded.chart}`)
+  check('the chart takes the space', folded.chart > layout.chartW + (wide - folded.table) * 0.9,
+    `${layout.chartW} → ${folded.chart}, gained ${folded.chart - layout.chartW}`)
   await page.screenshot({ path: `${OUT}/14-compact.png` })
   await page.click('.col-toggle')
   await page.waitForTimeout(400)
@@ -954,6 +957,58 @@ console.log('\n== deleting a project ==')
   await page.waitForTimeout(1000)
   check('cancelling the prompt keeps the project', (await page.locator('.project-card').count()) === after, survivor)
   await page.screenshot({ path: `${OUT}/12-projects.png` })
+}
+
+console.log('\n== steps ==')
+{
+  // Steps are the one feature that reaches the solver indirectly: a step's
+  // duration is part of its task's, so expanding is cosmetic but editing is
+  // not. This covers the cosmetic half; steps.py covers the cascade.
+  const target = page.locator('.project-card:has-text("Stonecliffe west wing refurbishment")')
+  await ((await target.count()) ? target.first() : page.locator('.project-card').first()).click()
+  await page.waitForSelector('.gantt svg .bar', { timeout: 10_000 })
+  await page.waitForTimeout(300)
+
+  const chevrons = await page.locator('.step-chevron').count()
+  if (chevrons === 0) {
+    console.log('     SKIP  no task in this project has steps')
+  } else {
+    const before = await page.locator('.table-row').count()
+    const barsBefore = await page.locator('.gantt .bar').count()
+
+    await page.locator('.step-chevron').first().click()
+    await page.waitForTimeout(400)
+
+    const after = await page.locator('.table-row').count()
+    check('expanding adds rows to the list', after > before, `${before} → ${after}`)
+    check('and they are marked as steps',
+      (await page.locator('.table-row.step-row').count()) === after - before,
+      `${await page.locator('.table-row.step-row').count()} step rows`)
+
+    // Both panes draw from one row list, so a mismatch here means they have
+    // drifted out of lockstep and every bar is against the wrong name.
+    const stepGlyphs =
+      (await page.locator('.gantt .step-bar').count()) +
+      (await page.locator('.gantt .step-check').count())
+    check('the chart gained exactly the same rows',
+      stepGlyphs === after - before, `${stepGlyphs} in the chart, ${after - before} in the list`)
+    check('and task bars are untouched',
+      (await page.locator('.gantt .bar').count()) === barsBefore,
+      `${barsBefore} → ${await page.locator('.gantt .bar').count()}`)
+
+    await page.screenshot({ path: `${OUT}/24-steps-expanded.png` })
+
+    await page.locator('.step-chevron').first().click()
+    await page.waitForTimeout(400)
+    check('collapsing puts it back',
+      (await page.locator('.table-row').count()) === before,
+      `${await page.locator('.table-row').count()} vs ${before}`)
+    check('and removes the step glyphs',
+      (await page.locator('.gantt .step-bar').count()) === 0)
+  }
+
+  await page.locator('button:has-text("← Projects")').click()
+  await page.waitForSelector('.project-card', { timeout: 10_000 })
 }
 
 console.log('\n== renaming a project ==')

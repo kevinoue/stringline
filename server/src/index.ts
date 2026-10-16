@@ -11,6 +11,7 @@ import passwordResetRoutes from './routes/password-reset.js'
 import projectRoutes from './routes/projects.js'
 import setupRoutes, { setupNeeded, setupToken } from './routes/setup.js'
 import sseRoutes from './routes/sse.js'
+import stepRoutes from './routes/steps.js'
 import teamRoutes from './routes/team.js'
 
 const app = express()
@@ -81,6 +82,7 @@ api.use(
 api.use('/team', teamRoutes)
 api.use('/categories', categoryRoutes)
 api.use('/projects', projectRoutes)
+api.use('/projects', stepRoutes)
 api.use('/', attachmentRoutes)
 api.use('/', sseRoutes)
 

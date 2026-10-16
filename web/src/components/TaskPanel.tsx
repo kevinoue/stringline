@@ -1,11 +1,13 @@
 import { useEffect, useState } from 'react'
 import { Attachments } from './Attachments.js'
+import { Steps } from './Steps.js'
 import type {
   Category,
   ConstraintType,
   Dependency,
   Phase,
   Schedule,
+  Step,
   ScheduledTask,
   TaskDetail,
 } from '../api/types.js'
@@ -17,6 +19,13 @@ interface Props {
   dependencies: Dependency[]
   phases: Phase[]
   categories: Category[]
+  steps: Step[]
+  /** Field users tick steps off; only planners restructure them. */
+  canEditSteps: boolean
+  onAddStep(name: string, durationDays: number): void
+  onUpdateStep(stepId: string, changes: Record<string, unknown>): void
+  onDeleteStep(stepId: string): void
+  onReorderSteps(order: string[]): void
   /** What this company calls the dimension — Trade, Department, Crew. */
   categoryLabel: string
   busy: boolean
@@ -51,6 +60,12 @@ export function TaskPanel({
   dependencies,
   phases,
   categories,
+  steps,
+  canEditSteps,
+  onAddStep,
+  onUpdateStep,
+  onDeleteStep,
+  onReorderSteps,
   categoryLabel,
   busy,
   onSave,
@@ -104,6 +119,9 @@ export function TaskPanel({
     .filter((t) => !linkedIds.has(t.id))
     .sort((a, b) => a.earlyStart.localeCompare(b.earlyStart))
 
+  /** Whether the steps determine the duration, or are just a tick-list. */
+  const stepsDrive = steps.some((s) => s.durationDays > 0)
+
   const save = (event: React.FormEvent) => {
     event.preventDefault()
     const patch: Record<string, unknown> = {
@@ -144,8 +162,17 @@ export function TaskPanel({
             min={0}
             value={duration}
             onChange={(e) => setDuration(e.target.value)}
+            // Once steps add up to something, the duration *is* their sum.
+            // Letting it be typed here would be a number that silently
+            // reverts the next time any step changes.
+            disabled={stepsDrive}
           />
         </label>
+        {stepsDrive && (
+          <p className="hint">
+            Made up of {steps.length} steps. Change a step&apos;s days to change this.
+          </p>
+        )}
 
         {/* Phases arrived with templates and could never be set by hand, so a
             blank project could not have them at all. They are also what lets
@@ -320,6 +347,19 @@ export function TaskPanel({
           </button>
         </div>
       </section>
+
+      {/* What the work is made of, between the plan above and the files
+          below. Changing a step's days changes the task's duration, which is
+          why these route through the same mutation path as a date move. */}
+      <Steps
+        steps={steps}
+        busy={busy}
+        canEdit={canEditSteps}
+        onAdd={onAddStep}
+        onUpdate={onUpdateStep}
+        onDelete={onDeleteStep}
+        onReorder={onReorderSteps}
+      />
 
       <Attachments taskId={task.id} />
 

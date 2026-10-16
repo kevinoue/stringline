@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { api, ApiError, clearToken, getToken, setToken, SOURCE_URL } from './api/client.js'
+import { api, ApiError, clearToken, getToken, setRole, setToken, SOURCE_URL } from './api/client.js'
 import type { Project, Template } from './api/types.js'
 import { AcceptInvite } from './components/AcceptInvite.js'
 import { ChangePassword } from './components/ChangePassword.js'
@@ -135,6 +135,7 @@ function Login({ onDone }: { onDone(): void }) {
     try {
       const result = await api.login(slug, email, password)
       setToken(result.token)
+      setRole(result.user.role)
       onDone()
     } catch (err) {
       setError(err instanceof ApiError ? err.message : String(err))

@@ -96,6 +96,16 @@ export async function saveProjectAsTemplate(
     [templateId, projectId],
   )
 
+  // Steps go too — a template that forgets how a task is actually done is
+  // only half the knowledge worth saving.
+  await client.query(
+    `INSERT INTO template_steps (template_id, task_key, name, duration_days, sort_order)
+     SELECT $1, 't_' || REPLACE(t.id::text, '-', ''), s.name, s.duration_days, s.sort_order
+     FROM steps s JOIN tasks t ON t.id = s.task_id
+     WHERE t.project_id = $2`,
+    [templateId, projectId],
+  )
+
   await client.query(
     `INSERT INTO template_dependencies (template_id, predecessor_key, successor_key, type, lag_days)
      SELECT $1,
@@ -240,6 +250,28 @@ export async function createProjectFromTemplate(
     )
     keyToId.set(t.key, row.rows[0]!.id)
   }
+
+  const templateSteps = await client.query<{
+    task_key: string
+    name: string
+    duration_days: number
+    sort_order: number
+  }>(
+    `SELECT task_key, name, duration_days, sort_order
+     FROM template_steps WHERE template_id = $1 ORDER BY task_key, sort_order`,
+    [templateId],
+  )
+  for (const step of templateSteps.rows) {
+    const taskId = keyToId.get(step.task_key)
+    if (!taskId) continue
+    await client.query(
+      `INSERT INTO steps (task_id, name, duration_days, sort_order) VALUES ($1, $2, $3, $4)`,
+      [taskId, step.name, step.duration_days, step.sort_order],
+    )
+  }
+  // The task durations in the template already equal the sum of their steps,
+  // because that is how they were stored — so there is nothing to recompute
+  // here, and recomputing would be the only way to get it wrong.
 
   const links = await client.query<{
     predecessor_key: string

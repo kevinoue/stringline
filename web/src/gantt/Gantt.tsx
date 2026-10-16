@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { Baseline, Category, Dependency, Schedule, ScheduledTask } from '../api/types.js'
+import type { Baseline, Category, Dependency, Schedule, ScheduledTask, Step } from '../api/types.js'
 import { PALETTE } from './palette.js'
 import { addDays, createTimeline, weekendBands, type Timeline } from './timeline.js'
 
@@ -61,6 +61,16 @@ interface Props {
    */
   focusCategory: string | null
   /**
+   * Step rows by id. `order` interleaves step ids among task ids when a task
+   * is expanded, so anything found here draws as a step and anything else as
+   * a task. Keeping both panes on one flat list of row ids is what keeps them
+   * scrolling in lockstep.
+   */
+  steps: Map<string, Step>
+  hasSteps: Set<string>
+  expanded: Set<string>
+  onToggle(taskId: string): void
+  /**
    * Which dimension owns colour. Never both: the chart has one rule — critical
    * is the only saturated colour — and two colour systems competing for
    * attention means neither is readable.
@@ -88,6 +98,10 @@ export function Gantt({
   categories,
   focusCategory,
   colourBy,
+  steps,
+  hasSteps,
+  expanded,
+  onToggle,
 }: Props) {
   const headerRef = useRef<HTMLDivElement>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -283,6 +297,20 @@ export function Gantt({
           </g>
 
           {visible.map((taskId) => {
+            const step = steps.get(taskId)
+            if (step) {
+              return (
+                <StepRow
+                  key={taskId}
+                  step={step}
+                  y={rowOf.get(taskId)! * ROW_HEIGHT}
+                  timeline={timeline}
+                  parentCritical={schedule.tasks[step.taskId]?.isCritical ?? false}
+                  onSelect={handleSelect}
+                />
+              )
+            }
+
             const task = schedule.tasks[taskId]
             if (!task) return null
             const row = rowOf.get(taskId)!
@@ -308,12 +336,71 @@ export function Gantt({
                 }
                 onSelect={handleSelect}
                 onPointerDown={startDrag}
+                expandable={hasSteps.has(taskId)}
+                expanded={expanded.has(taskId)}
+                onToggle={onToggle}
               />
             )
           })}
         </svg>
       </div>
     </div>
+  )
+}
+
+/**
+ * A step's bar, drawn inside its parent's span.
+ *
+ * Deliberately slighter than a task bar: a step is part of a task, not a peer
+ * of one, and drawing them the same height makes an expanded task look like
+ * five tasks. A zero-day step gets a mark rather than a bar, because it takes
+ * no time and a bar would say otherwise.
+ */
+function StepRow({
+  step,
+  y,
+  timeline,
+  parentCritical,
+  onSelect,
+}: {
+  step: Step
+  y: number
+  timeline: Timeline
+  parentCritical: boolean
+  onSelect(id: string): void
+}) {
+  const x = timeline.x(step.start)
+  const height = 8
+  const barY = y + (ROW_HEIGHT - height) / 2
+
+  const classes = ['step-bar']
+  if (parentCritical) classes.push('critical')
+  if (step.status === 'complete') classes.push('complete')
+
+  return (
+    <g className="row step" onClick={() => onSelect(step.taskId)} data-step={step.id}>
+      <rect x={0} y={y} width={timeline.width} height={ROW_HEIGHT} className="row-bg" />
+      {step.isCheck ? (
+        <circle
+          cx={x + 3}
+          cy={y + ROW_HEIGHT / 2}
+          r={3}
+          className={step.status === 'complete' ? 'step-check done' : 'step-check'}
+        />
+      ) : (
+        <rect
+          x={x}
+          y={barY}
+          width={Math.max(2, timeline.x(step.finish) + timeline.dayWidth - x)}
+          height={height}
+          rx={2}
+          className={classes.join(' ')}
+        />
+      )}
+      <text x={x + 10} y={y + ROW_HEIGHT / 2 + 3} className="step-label">
+        {step.name}
+      </text>
+    </g>
   )
 }
 
@@ -338,6 +425,10 @@ interface RowProps {
     mode: DragMode,
     anchorDate: string,
   ): void
+  /** Whether this task has steps to show, and whether they are showing. */
+  expandable: boolean
+  expanded: boolean
+  onToggle(taskId: string): void
 }
 
 function TaskRow({
@@ -355,6 +446,9 @@ function TaskRow({
   floorDate,
   onSelect,
   onPointerDown,
+  expandable,
+  expanded,
+  onToggle,
 }: RowProps) {
   const barY = y + (ROW_HEIGHT - BAR_HEIGHT) / 2
   const baseX = timeline.x(task.earlyStart)
@@ -408,7 +502,16 @@ function TaskRow({
       : undefined
 
   return (
-    <g className="row" onClick={() => onSelect(task.id)} data-task={task.id}>
+    <g
+      className={'row' + (expandable ? ' expandable' : '')}
+      onClick={() => onSelect(task.id)}
+      // Double-click, not single: a single click selects the task and opens
+      // the editor, and a bar is also the drag target. Expanding on single
+      // click would fire every time someone grabbed one.
+      onDoubleClick={expandable ? () => onToggle(task.id) : undefined}
+      data-task={task.id}
+      data-expanded={expandable ? expanded : undefined}
+    >
       <rect x={0} y={y} width={timeline.width} height={ROW_HEIGHT} className="row-bg" />
 
       {/*

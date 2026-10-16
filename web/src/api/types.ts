@@ -156,6 +156,27 @@ export interface Category {
   taskCount?: number
 }
 
+/**
+ * A part of a task, in sequence inside it.
+ *
+ * Steps carry no dependencies and never reach the solver — their dates are
+ * derived from where their task landed. A zero-day step (`isCheck`) is a
+ * tick-box rather than a bar.
+ */
+export interface Step {
+  id: string
+  taskId: string
+  name: string
+  durationDays: number
+  sortOrder: number
+  start: IsoDate
+  finish: IsoDate
+  isCheck: boolean
+  status: 'not-started' | 'in-progress' | 'complete'
+  actualStart: IsoDate | null
+  actualFinish: IsoDate | null
+}
+
 export interface MutationResult {
   schedule: Schedule
   impact: Impact | null

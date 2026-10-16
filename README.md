@@ -39,6 +39,9 @@ you, in a sentence.**
   accept the consequence.
 - **Templates** — including seasonal hotel closedown and reopening, which nothing else ships.
   Save any project as a template.
+- **Steps inside a task** — "Winterise the pool" is one bar until you open it, then it is drain,
+  blow the lines, antifreeze, cover. Steps with days make up the task's duration and get their own
+  bars in sequence; steps at zero days are tick-boxes that take no time. Progress rolls up.
 - **Trades and departments** — tag each task with who owns it, then focus the chart on one:
   theirs stays solid, everyone else's fades but stays visible, because "where does my work sit"
   is answered by the work around it. Colours come from a fixed palette with no red in it — the

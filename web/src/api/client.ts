@@ -13,6 +13,7 @@ import type {
   Role,
   Schedule,
   ScheduleProject,
+  Step,
   TaskDetail,
   TeamView,
   Template,
@@ -28,6 +29,7 @@ import type {
 const API_BASE = import.meta.env.VITE_API_BASE ?? '/stringline/api'
 
 const TOKEN_KEY = 'stringline.token'
+const ROLE_KEY = 'stringline.role'
 
 export function getToken(): string | null {
   return localStorage.getItem(TOKEN_KEY)
@@ -37,6 +39,23 @@ export function setToken(token: string): void {
 }
 export function clearToken(): void {
   localStorage.removeItem(TOKEN_KEY)
+  localStorage.removeItem(ROLE_KEY)
+}
+
+/**
+ * The signed-in user's role, kept so the UI can hide what it cannot do.
+ *
+ * Convenience only — never a security boundary. Every route checks the role
+ * on the server, from the token, on every request. This exists so a field
+ * user is not shown buttons that will answer 403.
+ */
+export function getRole(): Role {
+  const stored = localStorage.getItem(ROLE_KEY)
+  const roles: Role[] = ['owner', 'planner', 'field', 'client']
+  return roles.includes(stored as Role) ? (stored as Role) : 'field'
+}
+export function setRole(role: string): void {
+  localStorage.setItem(ROLE_KEY, role)
 }
 
 export class ApiError extends Error {
@@ -225,8 +244,42 @@ export const api = {
       details: TaskDetail[]
       phases: Phase[]
       categories: Category[]
+      steps: Step[]
       project: ScheduleProject
     }>('GET', `/projects/${projectId}/schedule`),
+
+  // ── Steps ─────────────────────────────────────────────────────────────────
+  // A step's duration is part of its task's, so these return a MutationResult
+  // with the impact banner — adding one really does move the schedule.
+
+  addStep: (projectId: string, taskId: string, name: string, durationDays = 0) =>
+    request<MutationResult>('POST', `/projects/${projectId}/tasks/${taskId}/steps`, {
+      name,
+      durationDays,
+    }),
+
+  updateStep: (
+    projectId: string,
+    taskId: string,
+    stepId: string,
+    changes: {
+      name?: string
+      durationDays?: number
+      actualStart?: string | null
+      actualFinish?: string | null
+    },
+  ) =>
+    request<MutationResult>(
+      'PATCH',
+      `/projects/${projectId}/tasks/${taskId}/steps/${stepId}`,
+      changes,
+    ),
+
+  deleteStep: (projectId: string, taskId: string, stepId: string) =>
+    request<MutationResult>('DELETE', `/projects/${projectId}/tasks/${taskId}/steps/${stepId}`),
+
+  reorderSteps: (projectId: string, taskId: string, order: string[]) =>
+    request<void>('PUT', `/projects/${projectId}/tasks/${taskId}/steps/order`, { order }),
 
   // ── Categories ────────────────────────────────────────────────────────────
   // Company-scoped, so these are not under /projects. Labelling work does not
