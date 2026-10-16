@@ -43,16 +43,21 @@ export function clearToken(): void {
 }
 
 /**
- * The signed-in user's role, kept so the UI can hide what it cannot do.
+ * The signed-in user's role, cached from the last sign-in.
  *
- * Convenience only — never a security boundary. Every route checks the role
- * on the server, from the token, on every request. This exists so a field
- * user is not shown buttons that will answer 403.
+ * A hint only, and deliberately optimistic: `null` means "not known yet", and
+ * callers should treat that as permissive and let the server refuse. Guessing
+ * *restricted* was the wrong default — a session predating this cache showed
+ * an owner the field-user interface, with the controls simply missing and
+ * nothing explaining why.
+ *
+ * `api.me()` is the authority. This exists only so the first paint after a
+ * reload does not flicker.
  */
-export function getRole(): Role {
+export function getCachedRole(): Role | null {
   const stored = localStorage.getItem(ROLE_KEY)
   const roles: Role[] = ['owner', 'planner', 'field', 'client']
-  return roles.includes(stored as Role) ? (stored as Role) : 'field'
+  return roles.includes(stored as Role) ? (stored as Role) : null
 }
 export function setRole(role: string): void {
   localStorage.setItem(ROLE_KEY, role)
@@ -157,6 +162,18 @@ export const api = {
     request<{ member: Member }>('PATCH', `/team/members/${id}`, changes),
 
   // ── Password recovery ─────────────────────────────────────────────────────
+
+  /**
+   * Who the token belongs to, and what they may do.
+   *
+   * The authority on the signed-in role. Cheap, and unlike a cached copy it
+   * cannot go stale when an owner changes somebody's role.
+   */
+  me: () =>
+    request<{ id: string; name: string; email: string; role: Role; companyId: string }>(
+      'GET',
+      '/auth/me',
+    ),
 
   /** Whether self-service reset can work here. It needs email; the UI hides it otherwise. */
   emailStatus: () => request<{ enabled: boolean }>('GET', '/auth/status'),

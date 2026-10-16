@@ -959,6 +959,72 @@ console.log('\n== deleting a project ==')
   await page.screenshot({ path: `${OUT}/12-projects.png` })
 }
 
+console.log('\n== the task editor offers what it should ==')
+{
+  // Two bugs lived here. The Trade dropdown was fed the project-scoped
+  // category list — right for the chart's legend, useless for assigning a
+  // trade, because the one you want is the one not on the job yet. And the
+  // steps add form was hidden whenever the signed-in role was unknown, which
+  // was every session predating the role cache: it defaulted to the most
+  // restricted role and silently removed an owner's controls.
+  const target = page.locator('.project-card:has-text("Stonecliffe west wing refurbishment")')
+  await ((await target.count()) ? target.first() : page.locator('.project-card').first()).click()
+  await page.waitForSelector('.gantt svg .bar', { timeout: 10_000 })
+
+  // Exactly the state an existing session was in.
+  await page.evaluate(() => localStorage.removeItem('stringline.role'))
+  await page.reload({ waitUntil: 'domcontentloaded' })
+  await page.waitForSelector('.project-card', { timeout: 10_000 })
+  await ((await target.count()) ? target.first() : page.locator('.project-card').first()).click()
+  await page.waitForSelector('.gantt svg .bar', { timeout: 10_000 })
+  await page.locator('.table-row').first().click()
+  await page.waitForSelector('.panel', { timeout: 10_000 })
+  await page.waitForTimeout(500)
+
+  // Matched on the label's own text node: a <label> wrapping a <select>
+  // reports every option as its text, so "has text Trade" matches nothing
+  // useful and an exact match matches nothing at all.
+  const dropdowns = await page.evaluate(() =>
+    [...document.querySelectorAll('.panel label')]
+      .map((l) => ({
+        label: l.firstChild?.textContent?.trim() ?? '',
+        options: [...l.querySelectorAll('option')].map((o) => o.textContent ?? ''),
+      }))
+      .filter((x) => x.options.length > 0),
+  )
+
+  const trade = dropdowns.find((d) => /trade|department|crew/i.test(d.label))
+  check('the task editor has a trade control', Boolean(trade), dropdowns.map((d) => d.label).join(', '))
+  if (trade) {
+    check('offering more than whatever is already on this project',
+      trade.options.length >= 4, trade.options.join(' | '))
+    check('with a way to add a new one',
+      trade.options.some((o) => /^New /.test(o)), trade.options.at(-1) ?? '')
+  }
+
+  check('the steps add form is shown when the role is not cached',
+    (await page.locator('.steps .step-add').count()) === 1,
+    `${await page.locator('.steps .step-add').count()} forms`)
+
+  // And it works, not just renders.
+  await page.locator('.steps .step-add input').first().fill('A step added in the browser')
+  await page.locator('.steps .step-add input[type="number"]').fill('1')
+  await page.locator('.steps .step-add button:has-text("Add")').click()
+  await page.waitForTimeout(1200)
+  const added = await page.locator('.steps .step-name').allTextContents()
+  check('and adding a step works', added.includes('A step added in the browser'),
+    added.join(' | ') || '(none)')
+
+  // Put it back — later blocks count rows and bars.
+  const row = page.locator('.steps .step-list li', { hasText: 'A step added in the browser' })
+  page.once('dialog', (d) => void d.accept())
+  await row.locator('button[aria-label^="Delete"]').click()
+  await page.waitForTimeout(1200)
+
+  await page.locator('button:has-text("← Projects")').click()
+  await page.waitForSelector('.project-card', { timeout: 10_000 })
+}
+
 console.log('\n== steps ==')
 {
   // Steps are the one feature that reaches the solver indirectly: a step's

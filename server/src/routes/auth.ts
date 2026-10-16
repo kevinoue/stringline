@@ -90,6 +90,29 @@ router.post('/login', async (req: Request, res: Response) => {
 })
 
 /**
+ * Who am I.
+ *
+ * The UI needs the signed-in role to decide what to offer — a field user
+ * should not be shown buttons that will answer 403. It was being cached in
+ * the browser at sign-in, which failed in two ways: a session that predated
+ * the cache had no role and fell back to the most restricted one, silently
+ * hiding features from an owner; and a role changed by an owner stayed stale
+ * until the user signed out.
+ *
+ * Asking is cheap and cannot go stale. Never a security boundary — every
+ * route checks the role server-side, from the token, on every request.
+ */
+router.get('/me', authenticate, (req: Request, res: Response) => {
+  res.json({
+    id: req.user!.id,
+    name: req.user!.name,
+    email: req.user!.email,
+    role: req.user!.role,
+    companyId: req.user!.companyId,
+  })
+})
+
+/**
  * Change your own password.
  *
  * The current password is required even though the request is already

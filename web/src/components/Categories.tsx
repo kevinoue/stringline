@@ -37,6 +37,8 @@ export function Categories({
 
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
+  /** Chosen colour for the one being added, or null to let the server pick. */
+  const [newColour, setNewColour] = useState<string | null>(null)
   const [editingLabel, setEditingLabel] = useState(false)
   const [draftLabel, setDraftLabel] = useState('')
 
@@ -150,7 +152,9 @@ export function Categories({
 
         {categories.length === 0 ? (
           <p className="hint">
-            None yet. Projects started from a template come with them already set up.
+            None yet. Add one below, or start a project from a template — the built-in ones
+            arrive already tagged. Each gets a colour you can change here, and the chart can be
+            coloured and filtered by it.
           </p>
         ) : (
           <table className="team-table">
@@ -214,7 +218,35 @@ export function Categories({
             Add
           </button>
         </form>
-        <p className="hint">A colour is chosen for you, and can be changed above.</p>
+
+        {/*
+          A colour chooser on the add form, not only on rows that already
+          exist. The old copy said one "is chosen for you, and can be changed
+          above" — true once there was a list, and a lie when the list was
+          empty, which is exactly when someone is reading it.
+        */}
+        <div className="add-colour">
+          <span className="sub">Colour</span>
+          <div className="swatches">
+            {palette.map((p) => (
+              <button
+                key={p.key}
+                type="button"
+                className={'swatch-btn' + (p.key === newColour ? ' chosen' : '')}
+                style={{ background: p.hex }}
+                title={p.label}
+                aria-label={`Use ${p.label}`}
+                disabled={busy}
+                onClick={() => setNewColour(p.key === newColour ? null : p.key)}
+              />
+            ))}
+          </div>
+          <span className="sub">
+            {newColour
+              ? palette.find((p) => p.key === newColour)?.label
+              : 'or leave it and the next free colour is used'}
+          </span>
+        </div>
 
         <div className="modal-actions">
           <button onClick={onClose}>Close</button>

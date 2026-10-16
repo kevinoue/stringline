@@ -204,6 +204,36 @@ check("a negative duration is refused", st == 400, f"got {st}")
 st, _ = call("PUT", f"/projects/{p2}/tasks/{rough}/steps/order", {"order": []}, owner)
 check("an empty order is refused", st == 400, f"got {st}")
 
+print("\n== adding a step never deletes a recorded date ==")
+# An actual is a record of something that happened. Deriving the parent's
+# actuals unconditionally meant adding a step to a finished task wiped its
+# finish date, because no step had been ticked yet.
+_, o = call("POST", f"/projects/{p2}/tasks", {"name": "Already finished", "durationDays": 2}, owner)
+done_task = o["taskId"]
+call("PATCH", f"/projects/{p2}/tasks/{done_task}",
+     {"actualStart": "2026-11-02", "actualFinish": "2026-11-03"}, owner)
+_, s2 = call("GET", f"/projects/{p2}/schedule", None, owner)
+before = next(d for d in s2["details"] if d["id"] == done_task)
+check("the task is recorded as finished", before["actualFinish"] == "2026-11-03",
+      str(before["actualFinish"]))
+
+call("POST", f"/projects/{p2}/tasks/{done_task}/steps", {"name": "A step added later"}, owner)
+_, s2 = call("GET", f"/projects/{p2}/schedule", None, owner)
+after = next(d for d in s2["details"] if d["id"] == done_task)
+check("adding an untouched step leaves the recorded dates alone",
+      after["actualFinish"] == "2026-11-03" and after["actualStart"] == "2026-11-02",
+      f"{after['actualStart']} → {after['actualFinish']}")
+
+# But once a step is reported, the roll-up takes over.
+_, s2 = call("GET", f"/projects/{p2}/schedule", None, owner)
+new_step = next(x for x in s2["steps"] if x["taskId"] == done_task)
+call("PATCH", f"/projects/{p2}/tasks/{done_task}/steps/{new_step['id']}",
+     {"actualStart": "2026-11-05"}, owner)
+_, s2 = call("GET", f"/projects/{p2}/schedule", None, owner)
+rolled = next(d for d in s2["details"] if d["id"] == done_task)
+check("but once a step is reported, the roll-up takes over",
+      rolled["actualFinish"] is None, str(rolled["actualFinish"]))
+
 print("\n== deleting the task takes its steps ==")
 _, o = call("POST", f"/projects/{p2}/tasks", {"name": "Doomed", "durationDays": 1}, owner)
 doomed = o["taskId"]

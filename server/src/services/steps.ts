@@ -161,18 +161,35 @@ export async function syncTaskFromSteps(client: PoolClient, taskId: string): Pro
   const finishes = steps.map((s) => s.actual_finish).filter((d): d is string => d !== null).sort()
   const allDone = finishes.length === steps.length
 
+  /*
+   * Only take over the task's actuals once a step has actually been reported.
+   *
+   * Deriving them unconditionally meant adding a step to a *finished* task
+   * wiped its recorded finish date: no step had actuals, so the roll-up said
+   * "not started" and overwrote a date somebody had put there. An actual is a
+   * record of something that happened, and a feature for breaking work down
+   * has no business deleting one.
+   *
+   * The moment any step is ticked, the roll-up takes over and the task's own
+   * dates stop being authoritative — which is the right trade. A task briefly
+   * reading complete with an untouched step inside it is a smaller problem
+   * than silently losing a date.
+   */
+  const anyProgress = starts.length > 0 || finishes.length > 0
+
   await client.query(
     `UPDATE tasks
         SET duration_days    = COALESCE($2, duration_days),
-            percent_complete = $3,
-            actual_start     = $4,
-            actual_finish    = $5,
+            percent_complete = COALESCE($3, percent_complete),
+            actual_start     = CASE WHEN $4::boolean THEN $5::date ELSE actual_start END,
+            actual_finish    = CASE WHEN $4::boolean THEN $6::date ELSE actual_finish END,
             updated_at       = NOW()
       WHERE id = $1`,
     [
       taskId,
       duration,
-      percent,
+      anyProgress ? percent : null,
+      anyProgress,
       starts[0] ?? null,
       allDone ? finishes[finishes.length - 1] : null,
     ],

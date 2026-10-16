@@ -860,3 +860,18 @@ button.danger:hover:not(:disabled) { background: #fdf0ee; }
 .step-add { display: flex; gap: 4px; }
 .step-add input[type='text'], .step-add input:not([type]) { flex: 1; min-width: 0; }
 .step-add input[type='number'] { width: 58px; flex: none; }
+
+/* The selected trade's colour, beside the dropdown that sets it. The picker
+   itself lives behind a toolbar button, which is easy to miss — this is the
+   hint that colours exist at all. */
+.trade-dot {
+  display: inline-block; width: 9px; height: 9px; margin-right: 5px;
+  border-radius: 2px; vertical-align: baseline;
+  border: 1px solid rgba(0, 0, 0, 0.15);
+}
+
+/* Colour chooser on the add form. The list above may be empty — which is
+   precisely when someone needs to be told colours exist. */
+.add-colour { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.add-colour .swatches { width: 112px; }
+.add-colour .sub { font-size: 11px; color: var(--ink-soft); }

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Attachments } from './Attachments.js'
 import { Steps } from './Steps.js'
+import { PALETTE } from '../gantt/palette.js'
 import type {
   Category,
   ConstraintType,
@@ -32,6 +33,8 @@ interface Props {
   onSave(patch: Record<string, unknown>): void
   /** Create a phase inline and return it, so a task can be filed without leaving. */
   onCreatePhase(name: string): Promise<Phase | null>
+  /** Same for a trade — company-wide, but reachable without leaving the task. */
+  onCreateCategory(name: string): Promise<Category | null>
   onDelete(): void
   onAddDependency(predecessorId: string, type: string, lagDays: number): void
   onRemoveDependency(dependencyId: string): void
@@ -70,6 +73,7 @@ export function TaskPanel({
   busy,
   onSave,
   onCreatePhase,
+  onCreateCategory,
   onDelete,
   onAddDependency,
   onRemoveDependency,
@@ -118,6 +122,12 @@ export function TaskPanel({
   const candidates = Object.values(schedule.tasks)
     .filter((t) => !linkedIds.has(t.id))
     .sort((a, b) => a.earlyStart.localeCompare(b.earlyStart))
+
+  /** The selected trade's colour, so the swatch beside the dropdown matches the chart. */
+  const chosenColour = (() => {
+    const key = categories.find((c) => c.id === categoryId)?.colour
+    return key ? PALETTE.find((p) => p.key === key) ?? null : null
+  })()
 
   /** Whether the steps determine the duration, or are just a tick-list. */
   const stepsDrive = steps.some((s) => s.durationDays > 0)
@@ -183,7 +193,15 @@ export function TaskPanel({
           {categoryLabel}
           <select
             value={categoryId ?? ''}
-            onChange={(e) => setCategoryId(e.target.value || null)}
+            onChange={(e) => {
+              if (e.target.value === '__new__') {
+                const name = prompt(`Name the new ${categoryLabel.toLowerCase()}`)?.trim()
+                if (!name) return
+                void onCreateCategory(name).then((made) => made && setCategoryId(made.id))
+                return
+              }
+              setCategoryId(e.target.value || null)
+            }}
           >
             <option value="">None</option>
             {categories.map((c) => (
@@ -191,8 +209,25 @@ export function TaskPanel({
                 {c.name}
               </option>
             ))}
+            <option value="__new__">New {categoryLabel.toLowerCase()}…</option>
           </select>
         </label>
+        <p className="hint">
+          {/* Where the list comes from was not obvious, and it is genuinely
+              unobvious: these are company-wide while phases are per-project.
+              The swatch is here so the link between a trade and its colour is
+              visible at the point you assign one — the picker lives behind a
+              toolbar button, which nobody found. */}
+          {chosenColour && (
+            <i
+              className="trade-dot"
+              style={{ background: chosenColour.hex }}
+              title={`${chosenColour.label} — change it from ${categoryLabel}s in the toolbar`}
+            />
+          )}
+          {categoryLabel}s are shared across every project. Add, rename and recolour them from{' '}
+          <strong>{categoryLabel}s</strong> in the toolbar.
+        </p>
 
         <label>
           Phase

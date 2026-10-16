@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { api, ApiError, getRole, SOURCE_URL } from './api/client.js'
+import { api, ApiError, getCachedRole, SOURCE_URL } from './api/client.js'
 import type {
   Baseline,
   Dependency,
@@ -8,6 +8,7 @@ import type {
   Schedule,
   Category,
   Phase,
+  Role,
   ScheduleProject,
   Step,
   TaskDetail,
@@ -47,6 +48,16 @@ export function ProjectView({ projectId, onBack }: { projectId: string; onBack()
   const [steps, setSteps] = useState<Step[]>([])
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [categoryLabel, setCategoryLabel] = useState('Trade')
+  /**
+   * Every category the company has, for the task editor's dropdown.
+   *
+   * Distinct from `categories`, which is only the ones already used on this
+   * project — right for the chart's legend and filter, and useless for
+   * assigning one, because a trade that is not on the job yet is exactly the
+   * one you are trying to pick.
+   */
+  const [allCategories, setAllCategories] = useState<Category[]>([])
+  const [role, setRole] = useState<Role | null>(getCachedRole())
   const [focusCategory, setFocusCategory] = useState<string | null>(null)
   const [colourBy, setColourBy] = useState<'critical' | 'category'>('critical')
   const [managingCategories, setManagingCategories] = useState(false)
@@ -81,7 +92,13 @@ export function ProjectView({ projectId, onBack }: { projectId: string; onBack()
     setSteps(data.steps)
     // The company's word for this dimension — Trade, Department, Crew. Company
     // -scoped, so it rides along rather than being fetched per project.
-    api.listCategories().then((r) => setCategoryLabel(r.label)).catch(() => {})
+    api
+      .listCategories()
+      .then((r) => {
+        setCategoryLabel(r.label)
+        setAllCategories(r.categories)
+      })
+      .catch(() => {})
     setMeta(data.project)
     setNameDraft(data.project.name)
     // Recomputed on every load, so it is never stale relative to the chart
@@ -140,6 +157,17 @@ export function ProjectView({ projectId, onBack }: { projectId: string; onBack()
       setNameDraft(meta?.name ?? '')
     }
   }
+
+  // The server is the authority on what this user may do. A cached role goes
+  // stale the moment an owner changes it, and an absent one used to default to
+  // the most restricted role — which hid the controls from the owner.
+  useEffect(() => {
+    let cancelled = false
+    api.me().then((m) => !cancelled && setRole(m.role)).catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   /** Steps by their parent task, in order. */
   const stepsByTask = useMemo(() => {
@@ -728,13 +756,16 @@ export function ProjectView({ projectId, onBack }: { projectId: string; onBack()
             schedule={schedule}
             dependencies={dependencies}
             phases={phases}
-            categories={categories}
+            categories={allCategories}
             categoryLabel={categoryLabel}
             steps={stepsByTask.get(selected.id) ?? []}
             // Only owners and planners restructure. A field user ticking a
             // step off is the whole point of the role, and that path is
             // separate.
-            canEditSteps={getRole() === 'owner' || getRole() === 'planner'}
+            // Permissive until the server says otherwise: an unknown role
+            // should not hide controls, and the server refuses anything the
+            // user may not do anyway.
+            canEditSteps={role === null || role === 'owner' || role === 'planner'}
             onAddStep={(name, days) =>
               void mutate(() => api.addStep(projectId, selected.id, name, days))
             }
@@ -753,6 +784,19 @@ export function ProjectView({ projectId, onBack }: { projectId: string; onBack()
                 .catch((e) => setError(e instanceof ApiError ? e.message : String(e)))
             }}
             busy={busy}
+            onCreateCategory={async (name) => {
+              try {
+                const made = (await api.createCategory({ name })).category
+                // Added locally as well so the select can be set to it at
+                // once; `load()` refreshes the project-scoped list the chart
+                // uses once the task is actually saved with it.
+                setAllCategories((current) => [...current, made])
+                return made
+              } catch (e) {
+                setError(e instanceof ApiError ? e.message : String(e))
+                return null
+              }
+            }}
             onCreatePhase={async (name) => {
               try {
                 const made = (await api.createPhase(projectId, name)).phase
