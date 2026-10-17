@@ -24,6 +24,7 @@ const CANDIDATES = [
 const executablePath = CANDIDATES.map((c) => join(CACHE, c)).find(existsSync)
 
 const BASE = process.env.APP_URL ?? 'http://localhost:5174/stringline/'
+const API = process.env.STRINGLINE_API ?? 'http://localhost:3006/stringline/api'
 const OUT = process.env.OUT_DIR ?? '/tmp/stringline-shots'
 const SLUG = process.env.SLUG
 if (!SLUG) {
@@ -70,8 +71,75 @@ await page.locator('label:has-text("Company code") input').fill(SLUG)
 await page.locator('label:has-text("Email") input').fill('kev@demo.test')
 await page.locator('label:has-text("Password") input').fill('correcthorse')
 await page.locator('button:has-text("Sign in")').click()
+/*
+ * The fixture is built through the API before the browser is driven, rather
+ * than inherited from whatever suite ran last.
+ *
+ * Both the seeded renovation and the winterization template are called
+ * something with "Stonecliffe" in it, so `.first()` opened a different project
+ * depending on creation order — and only one of them had steps. The printed
+ * step rows then came back empty against production while passing locally,
+ * which is a test telling you about its own ordering, not about the code.
+ *
+ * So: name the project exactly, and give one of its tasks steps here.
+ */
+const PROJECT = 'Stonecliffe west wing refurbishment'
+
+const api = async (path, init = {}) => {
+  const r = await fetch(`${API}${path}`, {
+    ...init,
+    headers: {
+      'content-type': 'application/json',
+      ...(token ? { authorization: `Bearer ${token}` } : {}),
+      ...(init.headers ?? {}),
+    },
+  })
+  const body = await r.text()
+  if (!r.ok) throw new Error(`${init.method ?? 'GET'} ${path} → ${r.status} ${body.slice(0, 200)}`)
+  return body ? JSON.parse(body) : null
+}
+
+let token = null
+;({ token } = await api('/auth/login', {
+  method: 'POST',
+  body: JSON.stringify({ slug: SLUG, email: 'kev@demo.test', password: 'correcthorse' }),
+}))
+
+const { projects } = await api('/projects')
+const project = projects.find((p) => p.name === PROJECT)
+if (!project) {
+  console.error(`no project called "${PROJECT}" in ${SLUG} — seed it with server/scripts/seed.py`)
+  process.exit(2)
+}
+
+// Steps on a task with a few days in it, so there is something to draw. Only
+// added when it has none, so a re-run against the same company is a no-op
+// rather than a pile of duplicates.
+{
+  // Steps arrive with the schedule, already sequenced — there is no per-task
+  // GET, and nor should there be: the dates only mean anything against solved
+  // task dates.
+  const { schedule, steps } = await api(`/projects/${project.id}/schedule`)
+  const list = Object.values(schedule.tasks)
+  const host =
+    list.find((t) => (t.durationDays ?? 0) >= 3 && t.type !== 'milestone') ?? list[0]
+  if ((steps ?? []).length === 0) {
+    for (const [name, days] of [
+      ['Set out and mark up', 1],
+      ['First fix', 2],
+      ['Sign off before close-up', 0],
+    ]) {
+      await api(`/projects/${project.id}/tasks/${host.id}/steps`, {
+        method: 'POST',
+        body: JSON.stringify({ name, durationDays: days }),
+      })
+    }
+  }
+  console.log(`fixture: steps on "${host.name}"`)
+}
+
 await page.waitForSelector('.project-card', { timeout: 15_000 })
-await page.locator('.project-card:has-text("Stonecliffe")').first().click()
+await page.locator('.project-card').filter({ hasText: PROJECT }).first().click()
 await page.waitForSelector('.gantt svg .bar', { timeout: 15_000 })
 
 console.log('== the print dialog ==')
@@ -83,8 +151,7 @@ const paperOptions = await page.locator('.print-dialog select').first().locator(
 check('offers several paper sizes', paperOptions >= 5, `${paperOptions} sizes`)
 
 const title = await page.locator('.print-dialog label').filter({ hasText: /^Title on the printout$/ }).locator('input').inputValue()
-check('the title is prefilled from the project',
-  title.includes('Stonecliffe'), title)
+check('the title is prefilled from the project', title.includes(PROJECT), title)
 
 const sheetNote = (await page.locator('.print-dialog .hint').last().textContent()) ?? ''
 check('it says how many sheets this will be', /sheets?/.test(sheetNote), sheetNote.trim().slice(0, 90))
