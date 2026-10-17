@@ -352,7 +352,10 @@ export const api = {
       `/projects/${projectId}/tasks/${taskId}/duplicate`,
     ),
 
-  createTask: (projectId: string, body: { name: string; durationDays: number }) =>
+  createTask: (
+    projectId: string,
+    body: { name: string; durationDays: number; afterTaskId?: string },
+  ) =>
     request<MutationResult>('POST', `/projects/${projectId}/tasks`, body),
 
   updateTask: (projectId: string, taskId: string, body: Record<string, unknown>) =>

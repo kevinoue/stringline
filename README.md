@@ -49,7 +49,11 @@ you, in a sentence.**
 - **Printing** — the task list and chart on Letter, Legal, 11×17, A4 or A3, landscape or
   portrait, with an editable title block and an optional plain-English cover sheet. The whole
   project is fitted to the sheet width; rows that overflow carry the title block and date axis
-  onto the next one.
+  onto the next one. Task names print beside their bars, and steps can be included.
+- **Checklists** — print any task as a sheet a crew can carry: its steps as tick-boxes, what it
+  is waiting on, blank columns for the date done and initials, room to write up defects, and a
+  short reference so what comes back can be typed in without matching on names. A whole trade's
+  tasks print as a packet, one page each.
 
 ## Design notes
 

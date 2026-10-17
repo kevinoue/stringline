@@ -150,6 +150,23 @@ check("the last step ends when the task does",
       steps[-1]["finish"] == s2["schedule"]["tasks"][rough]["earlyFinish"],
       f"{steps[-1]['finish']} vs {s2['schedule']['tasks'][rough]['earlyFinish']}")
 
+print("\n== a trailing check cannot fall past its own task ==")
+# The cursor has already stepped past the last working day by the time a
+# trailing check is laid out. Unclamped, the check rendered a day beyond its
+# own bar, which on a printed chart reads as work happening after the task
+# finished.
+_, o = call("POST", f"/projects/{p2}/tasks", {"name": "One day, then checks", "durationDays": 1}, owner)
+trail = o["taskId"]
+call("POST", f"/projects/{p2}/tasks/{trail}/steps", {"name": "Do the work", "durationDays": 1}, owner)
+call("POST", f"/projects/{p2}/tasks/{trail}/steps", {"name": "Confirm it is done"}, owner)
+call("POST", f"/projects/{p2}/tasks/{trail}/steps", {"name": "Sign it off"}, owner)
+_, s2 = call("GET", f"/projects/{p2}/schedule", None, owner)
+task = s2["schedule"]["tasks"][trail]
+trailing = [x for x in s2["steps"] if x["taskId"] == trail and x["isCheck"]]
+check("the checks sit on the task's last day, not after it",
+      all(x["start"] <= task["earlyFinish"] for x in trailing),
+      f"task ends {task['earlyFinish']}, checks at {[x['start'] for x in trailing]}")
+
 print("\n== THE ONE THAT MATTERS: a step's duration moves the schedule ==")
 check("adding steps already pushed the dependent task",
       s2["schedule"]["tasks"][inspect]["earlyStart"] != inspect_before,

@@ -6,12 +6,14 @@ import type {
   Category,
   Dependency,
   Phase,
+  Step,
   ProjectSummary,
   Schedule,
   ScheduledTask,
   TaskDetail,
 } from '../api/types.js'
-import { PrintView, type PrintOptions } from './PrintView.js'
+import { Checklist } from './Checklist.js'
+import { PrintView, type PrintOptions, type StepMode } from './PrintView.js'
 import {
   fitDayWidth,
   geometryFor,
@@ -33,6 +35,8 @@ interface Props {
   categoryOf: Map<string, string>
   categoryLabel: string
   dependencies: Dependency[]
+  steps: Step[]
+  expandedTasks: Set<string>
   baseline: Baseline | null
   summary: ProjectSummary | null
   order: ScheduledTask[]
@@ -59,6 +63,8 @@ export function PrintDialog({
   categoryOf,
   categoryLabel,
   dependencies,
+  steps,
+  expandedTasks,
   baseline,
   summary,
   order,
@@ -72,6 +78,10 @@ export function PrintDialog({
   const [showSummary, setShowSummary] = useState(true)
   const [showLegend, setShowLegend] = useState(true)
   const [onlyCategory, setOnlyCategory] = useState<string | null>(null)
+  /** Gantt sheet, or a stack of checklists. Two documents, not two views. */
+  const [mode, setMode] = useState<'chart' | 'checklist'>('chart')
+  const [stepMode, setStepMode] = useState<StepMode>('expanded')
+  const [showLabels, setShowLabels] = useState(true)
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState<string | null>(null)
   /** What the server already holds, so a blur with no edit sends nothing. */
@@ -90,7 +100,35 @@ export function PrintDialog({
     showSummary,
     showLegend,
     onlyCategory,
+    // A trade's sheet is a work packet, so it carries the detail by default.
+    // The whole-schedule sheet follows what is open on screen.
+    stepMode: onlyCategory ? 'all' : stepMode,
+    showLabels,
   }
+
+  const stepsByTask = (() => {
+    const map = new Map<string, Step[]>()
+    for (const step of [...steps].sort((a, b) => a.sortOrder - b.sortOrder)) {
+      const list = map.get(step.taskId)
+      if (list) list.push(step)
+      else map.set(step.taskId, [step])
+    }
+    return map
+  })()
+
+  /*
+   * Which tasks get a checklist.
+   *
+   * Only ones with steps — a sheet listing a single line is a waste of paper
+   * and of someone's attention. Filtered by trade when one is chosen, which
+   * is what makes the packet: every Maintenance task, one page each, handed
+   * over as a folder on day one.
+   */
+  const checklistTasks = order.filter(
+    (t) =>
+      (stepsByTask.get(t.id)?.length ?? 0) > 0 &&
+      (!onlyCategory || categoryOf.get(t.id) === onlyCategory),
+  )
 
   const geometry = geometryFor(paper, orientation)
   const perPage = rowsPerPage(geometry)
@@ -108,7 +146,10 @@ export function PrintDialog({
     )
     return mine.size + waiting.size
   })()
-  const sheets = Math.max(1, Math.ceil(printedRows / perPage)) + (showSummary && summary ? 1 : 0)
+  const sheets =
+    mode === 'checklist'
+      ? checklistTasks.length
+      : Math.max(1, Math.ceil(printedRows / perPage)) + (showSummary && summary ? 1 : 0)
 
   // Span, not the padded screen timeline: this is how many days of real project
   // have to fit between the task column and the right margin.
@@ -177,6 +218,33 @@ export function PrintDialog({
           <h2>Print</h2>
 
           {error && <p className="error">{error}</p>}
+
+          {/* The first choice, because it changes what the rest of the dialog
+              is for. A chart answers "when does this happen"; a checklist
+              answers "what am I doing today and what do I write down". */}
+          <div className="print-mode">
+            <button
+              type="button"
+              className={mode === 'chart' ? 'active' : ''}
+              onClick={() => setMode('chart')}
+            >
+              Schedule chart
+            </button>
+            <button
+              type="button"
+              className={mode === 'checklist' ? 'active' : ''}
+              onClick={() => setMode('checklist')}
+            >
+              Checklists
+            </button>
+          </div>
+          {mode === 'checklist' && (
+            <p className="hint">
+              One sheet per task, with its steps as tick-boxes and room to write what was found.
+              Each carries a short reference so what comes back can be typed in without matching
+              on names.
+            </p>
+          )}
 
           <div className="print-options">
             <label>
@@ -248,12 +316,44 @@ export function PrintDialog({
             </p>
           )}
 
+          {mode === 'chart' && (
+            <label>
+              Steps
+              <select
+                value={onlyCategory ? 'all' : stepMode}
+                disabled={Boolean(onlyCategory)}
+                onChange={(e) => setStepMode(e.target.value as StepMode)}
+              >
+                <option value="none">Don&apos;t show them</option>
+                <option value="expanded">The ones I&apos;ve expanded</option>
+                <option value="all">All of them</option>
+              </select>
+            </label>
+          )}
+          {mode === 'chart' && onlyCategory && (
+            <p className="hint">
+              A single {categoryLabel.toLowerCase()}&apos;s sheet always carries every step — it is
+              a work packet, and detail is the point of it.
+            </p>
+          )}
+
           <div className="print-toggles">
+            {mode === 'chart' && (
+              <label className="checkbox">
+                <input
+                  type="checkbox"
+                  checked={showLabels}
+                  onChange={(e) => setShowLabels(e.target.checked)}
+                />
+                Task names beside the bars
+              </label>
+            )}
             <label className="checkbox">
               <input
                 type="checkbox"
                 checked={showDates}
                 onChange={(e) => setShowDates(e.target.checked)}
+                disabled={mode === 'checklist'}
               />
               Date and float columns
             </label>
@@ -262,7 +362,7 @@ export function PrintDialog({
                 type="checkbox"
                 checked={showSummary}
                 onChange={(e) => setShowSummary(e.target.checked)}
-                disabled={!summary}
+                disabled={!summary || mode === 'checklist'}
               />
               Summary cover sheet
             </label>
@@ -271,14 +371,26 @@ export function PrintDialog({
                 type="checkbox"
                 checked={showLegend}
                 onChange={(e) => setShowLegend(e.target.checked)}
+                disabled={mode === 'checklist'}
               />
               Legend
             </label>
           </div>
 
           <p className="hint">
-            {sheets} {sheets === 1 ? 'sheet' : 'sheets'} · {printedRows} tasks ·{' '}
-            {perPage} per sheet · whole project fits the width
+            {mode === 'checklist' ? (
+              sheets === 0 ? (
+                <>Nothing to print — no task here has steps yet.</>
+              ) : (
+                <>
+                  {sheets} {sheets === 1 ? 'checklist' : 'checklists'}, one task per page
+                  {onlyCategory ? ', for that one trade' : ''}
+                </>
+              )
+            ) : (
+              <>
+                {sheets} {sheets === 1 ? 'sheet' : 'sheets'} · {printedRows} tasks ·{' '}
+                {perPage} per sheet · whole project fits the width
             {isDense(dayWidth) && (
               // Not blocked. Someone printing a two-year programme as a
               // one-page overview knows what they are asking for.
@@ -286,6 +398,8 @@ export function PrintDialog({
                 {' '}
                 — <strong>but it will be tight.</strong> Try the week or month axis for
                 something more readable.
+              </>
+            )}
               </>
             )}
           </p>
@@ -320,18 +434,37 @@ export function PrintDialog({
       */}
       {createPortal(
         <div className="print-only">
-          <PrintView
-            options={options}
-            schedule={schedule}
-            details={details}
-            phases={phases}
-            categories={categories}
-            categoryOf={categoryOf}
-            dependencies={dependencies}
-            baseline={baseline}
-            summary={summary}
-            order={order}
-          />
+          {mode === 'checklist' ? (
+            <Checklist
+              tasks={checklistTasks}
+              stepsByTask={stepsByTask}
+              details={details}
+              schedule={schedule}
+              dependencies={dependencies}
+              phases={phases}
+              categories={categories}
+              categoryOf={categoryOf}
+              projectTitle={title}
+              subtitle={subtitle}
+              paper={paper}
+              orientation={orientation}
+            />
+          ) : (
+            <PrintView
+              options={options}
+              schedule={schedule}
+              details={details}
+              phases={phases}
+              categories={categories}
+              categoryOf={categoryOf}
+              dependencies={dependencies}
+              steps={steps}
+              expandedTasks={expandedTasks}
+              baseline={baseline}
+              summary={summary}
+              order={order}
+            />
+          )}
         </div>,
         document.body,
       )}

@@ -478,7 +478,7 @@ router.get('/:projectId/schedule', async (req: Request, res: Response) => {
           const calendar =
             calendars.get(calendarOf.get(taskId) ?? input.defaultCalendarId) ??
             calendars.get(input.defaultCalendarId)!
-          steps.push(...sequenceSteps(calendar, solved.earlyStart, rows))
+          steps.push(...sequenceSteps(calendar, solved.earlyStart, rows, solved.earlyFinish))
         }
       }
 
@@ -570,7 +570,8 @@ router.get('/:projectId/client-view', async (req: Request, res: Response) => {
 
 router.post('/:projectId/tasks', requirePlanner, async (req: Request, res: Response) => {
   const projectId = param(req, 'projectId')
-  const { name, durationDays, phaseId, calendarId, constraintType, constraintDate, visibility } =
+  const { name, durationDays, phaseId, calendarId, constraintType, constraintDate, visibility,
+          afterTaskId } =
     req.body ?? {}
 
   if (!name || durationDays === undefined) {
@@ -582,20 +583,49 @@ router.post('/:projectId/tasks', requirePlanner, async (req: Request, res: Respo
     const payload = await transaction(async (client) => {
       if (!(await ownsProject(client, projectId, req.company!.id))) return null
 
+      /*
+       * Where the new row lands.
+       *
+       * Below whatever is selected, falling back to the end. Appending always
+       * is wrong when someone is building out a section: they select the task
+       * they are working near, add the next one, and find it at the bottom of
+       * forty rows.
+       *
+       * Everything after the anchor is pushed down first so there is always a
+       * gap to insert into. Without that, a second insert after the same
+       * anchor collides with the first and the two rows order arbitrarily.
+       */
+      let position: number | null = null
+      if (afterTaskId) {
+        const { rows: anchor } = await client.query<{ sort_order: number }>(
+          'SELECT sort_order FROM tasks WHERE id = $1 AND project_id = $2',
+          [afterTaskId, projectId],
+        )
+        if (anchor[0]) {
+          await client.query(
+            'UPDATE tasks SET sort_order = sort_order + 10 WHERE project_id = $1 AND sort_order > $2',
+            [projectId, anchor[0].sort_order],
+          )
+          position = anchor[0].sort_order + 5
+        }
+      }
+
       let taskId: string | null = null
       const change = await applyAndExplain(
         client,
         { projectId, actorId: req.user!.id, action: 'task.create', newValue: String(name) },
         async () => {
           const inserted = await client.query<{ id: string }>(
-            // sort_order is assigned from the end of the list so the task list
-            // has a stable order of its own. Without it every task shares
-            // sort_order 0, the view falls back to sorting by date, and rows
-            // jump around the moment a schedule shifts.
+            // sort_order gives the task list a stable order of its own.
+            // Without it every task shares sort_order 0, the view falls back
+            // to sorting by date, and rows jump around the moment a schedule
+            // shifts.
             `INSERT INTO tasks (project_id, phase_id, name, duration_days, calendar_id,
                                 constraint_type, constraint_date, visibility, sort_order)
              VALUES ($1, $2, $3, $4, $5, $6, $7, $8,
-                     COALESCE((SELECT MAX(sort_order) + 10 FROM tasks WHERE project_id = $1), 0))
+                     COALESCE($9::int,
+                              (SELECT MAX(sort_order) + 10 FROM tasks WHERE project_id = $1),
+                              0))
              RETURNING id`,
             [
               projectId,
@@ -608,6 +638,7 @@ router.post('/:projectId/tasks', requirePlanner, async (req: Request, res: Respo
               // A milestone is the thing a client is meant to see, so it is
               // visible unless someone says otherwise.
               visibility ?? (Number(durationDays) === 0 ? 'client' : 'internal'),
+              position,
             ],
           )
           taskId = inserted.rows[0]!.id
@@ -882,6 +913,15 @@ router.post('/:projectId/tasks/:taskId/duplicate', requirePlanner, async (req, r
           oldValue: rows[0]!.name,
         },
         async () => {
+          // Push everything after the original down first, so there is a gap
+          // to land in. Without it, duplicating the same task twice puts both
+          // copies at the same sort_order and they order arbitrarily.
+          await client.query(
+            `UPDATE tasks SET sort_order = sort_order + 10
+              WHERE project_id = $2
+                AND sort_order > (SELECT sort_order FROM tasks WHERE id = $1)`,
+            [taskId, projectId],
+          )
           const { rows: made } = await client.query<{ id: string }>(
             `INSERT INTO tasks
                (project_id, phase_id, category_id, name, duration_days, calendar_id,
@@ -890,7 +930,7 @@ router.post('/:projectId/tasks/:taskId/duplicate', requirePlanner, async (req, r
                     calendar_id, constraint_type, constraint_date, visibility,
                     -- Immediately after the original, so a split reads in order
                     -- rather than appearing at the bottom of the list.
-                    sort_order + 1
+                    sort_order + 5
                FROM tasks WHERE id = $1
              RETURNING id`,
             [taskId],

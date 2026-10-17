@@ -4,6 +4,7 @@ import type {
   Category,
   Dependency,
   Phase,
+  Step,
   ProjectSummary,
   Schedule,
   ScheduledTask,
@@ -26,8 +27,20 @@ const HEALTH_LABEL: Record<string, string> = {
   'at-risk': 'At risk',
 }
 
+/**
+ * How much of a task's steps a printed sheet carries.
+ *
+ * "expanded" follows what is open on screen, which is what someone means when
+ * they expand a task and reach for print. "all" exists so a full set does not
+ * require opening fourteen buildings first.
+ */
+export type StepMode = 'none' | 'expanded' | 'all'
+
 export interface PrintOptions {
   paper: PaperSize
+  stepMode: StepMode
+  /** The task name beside its bar, as the screen draws it. */
+  showLabels: boolean
   /**
    * Print only one category's work, or null for all.
    *
@@ -54,6 +67,9 @@ interface Props {
   categoryOf: Map<string, string>
   /** Needed on a filtered sheet, to show what the filtered work is waiting on. */
   dependencies: Dependency[]
+  steps: Step[]
+  /** Which tasks are open on screen, for `stepMode: 'expanded'`. */
+  expandedTasks: Set<string>
   baseline: Baseline | null
   summary: ProjectSummary | null
   /** Screen row order, so paper and screen agree. */
@@ -82,6 +98,8 @@ export function PrintView({
   categories,
   categoryOf,
   dependencies,
+  steps,
+  expandedTasks,
   baseline,
   summary,
   order,
@@ -133,8 +151,35 @@ export function PrintView({
   }
   const rows = only ? order.filter((t) => mine.has(t.id) || waitingOn.has(t.id)) : order
 
-  const pages: ScheduledTask[][] = []
-  for (let i = 0; i < rows.length; i += perPage) pages.push(rows.slice(i, i + perPage))
+  /*
+   * Steps are woven into the row list, exactly as the screen does it, so the
+   * table and the chart stay on one flat sequence of rows. A printed sheet
+   * has no scrolling to keep in sync, but the two columns still have to agree
+   * line for line.
+   */
+  const stepsByTask = new Map<string, Step[]>()
+  for (const step of [...steps].sort((a, b) => a.sortOrder - b.sortOrder)) {
+    const list = stepsByTask.get(step.taskId)
+    if (list) list.push(step)
+    else stepsByTask.set(step.taskId, [step])
+  }
+
+  const showStepsFor = (taskId: string): boolean => {
+    if (options.stepMode === 'none') return false
+    if (options.stepMode === 'all') return true
+    return expandedTasks.has(taskId)
+  }
+
+  type PrintRow = { task: ScheduledTask; step: Step | null }
+  const allRows: PrintRow[] = []
+  for (const task of rows) {
+    allRows.push({ task, step: null })
+    if (!showStepsFor(task.id)) continue
+    for (const step of stepsByTask.get(task.id) ?? []) allRows.push({ task, step })
+  }
+
+  const pages: PrintRow[][] = []
+  for (let i = 0; i < allRows.length; i += perPage) pages.push(allRows.slice(i, i + perPage))
   if (pages.length === 0) pages.push([])
 
   // Palette key -> printed colours, for the stripe beside each bar.
@@ -296,7 +341,36 @@ export function PrintView({
             <Axis timeline={timeline} height={PRINT.axisHeight} width={chartWidth} />
 
             <div className="print-table">
-              {pageRows.map((task) => {
+              {pageRows.map(({ task, step }) => {
+                if (step) {
+                  return (
+                    <div
+                      key={step.id}
+                      className={'print-row print-step' + (step.isCheck ? ' check' : '')}
+                      data-category={categoryOf.get(task.id) ?? ''}
+                      data-step="true"
+                      style={{ height: PRINT.rowHeight }}
+                    >
+                      <span className="print-col-name" title={step.name}>
+                        <span className="print-step-indent" aria-hidden />
+                        {/* A box to tick on a zero-day check, an arrow on work
+                            that takes time. The distinction matters on paper:
+                            one is something to confirm, the other something to
+                            schedule a person for. */}
+                        <span className="print-step-mark">{step.isCheck ? '☐' : '↳'}</span>
+                        {step.name}
+                      </span>
+                      {options.showDates && (
+                        <>
+                          <span className="print-col-date">{step.isCheck ? '' : step.start}</span>
+                          <span className="print-col-date">{step.isCheck ? '' : step.finish}</span>
+                          <span className="print-col-float" />
+                        </>
+                      )}
+                    </div>
+                  )
+                }
+
                 const detail = details[task.id]
                 const phase = detail?.phaseId ? phaseName.get(detail.phaseId) : null
                 return (
@@ -348,6 +422,7 @@ export function PrintView({
               baseline={baseline}
               rowHeight={PRINT.rowHeight}
               stripes={stripes}
+              showLabels={options.showLabels}
             />
           </div>
 
@@ -414,6 +489,17 @@ function Axis({
   )
 }
 
+/**
+ * Roughly how wide a label will be, in px.
+ *
+ * An estimate rather than a measurement: measuring text means laying it out,
+ * and this runs for every bar on every sheet. 0.52em per character is close
+ * enough for deciding whether a label fits, which is all it is used for.
+ */
+function labelWidth(text: string, fontPx: number): number {
+  return text.length * fontPx * 0.52
+}
+
 function Chart({
   timeline,
   width,
@@ -421,14 +507,16 @@ function Chart({
   baseline,
   rowHeight,
   stripes,
+  showLabels,
 }: {
   timeline: Timeline
   width: number
-  rows: ScheduledTask[]
+  rows: Array<{ task: ScheduledTask; step: Step | null }>
   baseline: Baseline | null
   rowHeight: number
   /** Task id -> stripe colour, already resolved from the palette. */
   stripes: Map<string, string>
+  showLabels: boolean
 }) {
   const height = rows.length * rowHeight
   const barHeight = rowHeight - 7
@@ -451,14 +539,57 @@ function Chart({
         />
       ))}
 
-      {rows.map((task, i) => {
+      {rows.map(({ task, step }, i) => {
         const y = i * rowHeight
+
+        // A step's bar: slighter than its task's, and a tick rather than a bar
+        // when it takes no time.
+        if (step) {
+          const sx = timeline.x(step.start)
+          const sw = Math.max(1, timeline.x(step.finish) + timeline.dayWidth - sx)
+          return (
+            <g key={step.id}>
+              <rect x={0} y={y} width={width} height={rowHeight} className="print-row-band light" />
+              {step.isCheck ? (
+                <circle cx={sx + 2} cy={y + rowHeight / 2} r={2} className="print-step-check" />
+              ) : (
+                <rect x={sx} y={y + 6} width={sw} height={rowHeight - 12} className="print-step-bar" />
+              )}
+            </g>
+          )
+        }
+
         const x = timeline.x(task.earlyStart)
         const w = Math.max(1, timeline.x(task.earlyFinish) + timeline.dayWidth - x)
         const ghost = baseline?.tasks[task.id] ?? null
         const classes = ['print-bar']
         if (task.isCritical) classes.push('critical')
         if (task.status === 'complete') classes.push('complete')
+
+        /*
+         * The task name beside its bar.
+         *
+         * Worth more on paper than on screen: on a seventeen-inch sheet,
+         * tracking from a bar back across fourteen inches to the name column
+         * is genuinely hard, and every serious Gantt printout puts the name
+         * at the bar.
+         *
+         * Placed after the bar when there is room, before it when there is
+         * room on that side instead, and dropped when there is neither.
+         * A label that runs off the sheet or over the next bar is worse than
+         * no label — it prints as a smear and the sheet looks broken.
+         */
+        const LABEL_PX = 7
+        const needed = labelWidth(task.name, LABEL_PX) + 6
+        const fitsAfter = x + w + needed < width
+        const fitsBefore = x - needed > 0
+        const label = !showLabels || task.isMilestone
+          ? null
+          : fitsAfter
+            ? { x: x + w + 3, anchor: 'start' as const }
+            : fitsBefore
+              ? { x: x - 3, anchor: 'end' as const }
+              : null
 
         return (
           <g key={task.id}>
@@ -497,6 +628,17 @@ function Chart({
                   />
                 )}
               </>
+            )}
+
+            {label && (
+              <text
+                x={label.x}
+                y={y + rowHeight / 2 + 2.5}
+                textAnchor={label.anchor}
+                className={task.isCritical ? 'print-bar-label critical' : 'print-bar-label'}
+              >
+                {task.name}
+              </text>
             )}
           </g>
         )

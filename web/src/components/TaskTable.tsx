@@ -250,7 +250,13 @@ export function TaskTable({
               className={
                 `table-row${selectedId === id ? ' selected' : ''}` +
                 `${task.isCritical ? ' critical' : ''}` +
-                `${focusCategory && categoryOf.get(id) !== focusCategory ? ' dimmed' : ''}` +
+                `${
+                  focusCategory && categoryOf.get(id) !== focusCategory
+                    ? task.isCritical
+                      ? ' dimmed-critical'
+                      : ' dimmed'
+                    : ''
+                }` +
                 `${dragging === id ? ' dragging' : ''}` +
                 `${over === id && dragging !== id ? ' drop-target' : ''}`
               }

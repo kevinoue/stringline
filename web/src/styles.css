@@ -679,6 +679,28 @@ button.danger:hover:not(:disabled) { background: #fdf0ee; }
   .print-milestone { fill: #2c3038; }
   .print-milestone.critical { fill: #c0392b; }
 
+  /* ── Steps on a printed chart ──────────────────────────────────────────── */
+
+  /* A step is part of a task, not a peer of one. Everything here is lighter
+     and smaller than its task equivalent so an expanded task of six steps
+     does not read as seven tasks. */
+  .print-row.print-step { font-size: 7pt; color: #555; }
+  .print-step-indent { display: inline-block; width: 12px; flex: none; }
+  .print-step-mark { flex: none; margin-right: 4px; font-size: 6.5pt; }
+  .print-row.print-step .print-col-date { font-size: 6.5pt; color: #777; }
+
+  .print-step-bar { fill: #9aa5b1; }
+  .print-step-check { fill: #fff; stroke: #777; stroke-width: 0.8; }
+  .print-row-band.light { fill: #fbfbfb; }
+
+  /* ── Task names beside their bars ──────────────────────────────────────── */
+
+  /* On a seventeen-inch sheet, tracking from a bar back across fourteen
+     inches to the name column is genuinely hard. Dropped rather than clipped
+     when there is no room — a half-printed word reads as a fault. */
+  .print-bar-label { font-size: 7pt; fill: #444; }
+  .print-bar-label.critical { fill: #8a2f22; font-weight: 600; }
+
   /* ── Legend ────────────────────────────────────────────────────────────── */
 
   .print-legend {
@@ -699,6 +721,89 @@ button.danger:hover:not(:disabled) { background: #fdf0ee; }
   /* Space between the date/float columns and the first tick of the axis. */
   .print-table-head .print-col-float { padding-right: 6px; }
   .print-row .print-col-float { padding-right: 6px; }
+
+  /* ── Checklists ────────────────────────────────────────────────────────── */
+
+  /* Built to be photocopied, folded into a pocket and filled in with a biro
+     in a plant room. High contrast, low ink, generous writing space. */
+  /* Capped to a readable measure rather than the sheet width. On a 17-inch
+     page the "date done" and "initials" columns ended up a foot away from the
+     step they belong to, which is a long way for an eye to travel with a pen
+     in the other hand. A checklist does not need a wide sheet; it needs a
+     short line. */
+  .checklist-page { display: flex; flex-direction: column; max-width: 740px; }
+
+  .checklist-head {
+    display: flex; align-items: flex-start; justify-content: space-between;
+    gap: 20px; border-bottom: 2px solid #111; padding-bottom: 8px;
+  }
+  .checklist-project {
+    margin: 0; font-size: 8pt; text-transform: uppercase;
+    letter-spacing: 0.08em; color: #777;
+  }
+  .checklist-head h1 { margin: 2px 0 0; font-size: 19pt; letter-spacing: -0.01em; }
+  .checklist-meta { margin: 3px 0 0; font-size: 9pt; color: #444; }
+
+  .checklist-ref { display: flex; gap: 16px; margin: 0; flex-shrink: 0; }
+  .checklist-ref div { text-align: right; }
+  .checklist-ref dt {
+    font-size: 6pt; text-transform: uppercase; letter-spacing: 0.08em; color: #777;
+  }
+  .checklist-ref dd { margin: 1px 0 0; font-size: 9pt; font-variant-numeric: tabular-nums; }
+  /* The code someone reads aloud or types back in. Monospaced so 0 and O are
+     not a guess. */
+  .checklist-ref .ref-code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 12pt; font-weight: 700; letter-spacing: 0.06em;
+  }
+
+  /* The single most useful line on the page, and the one a checklist usually
+     leaves out. */
+  .checklist-waiting {
+    margin: 10px 0 0; padding: 7px 10px; font-size: 8.5pt; color: #5d4037;
+    background: #fff8e1; border-left: 3px solid #c68c3e;
+  }
+
+  .checklist-table { width: 100%; border-collapse: collapse; margin-top: 14px; }
+  .checklist-table th {
+    font-size: 6.5pt; text-transform: uppercase; letter-spacing: 0.07em;
+    color: #777; text-align: left; padding-bottom: 4px; border-bottom: 1px solid #111;
+  }
+  .checklist-table td {
+    padding: 9px 4px; font-size: 9.5pt; border-bottom: 0.5px solid #ccc; vertical-align: top;
+  }
+  .checklist-table td.col-tick { width: 34px; font-size: 14pt; line-height: 1; }
+  .checklist-table th.col-tick { width: 34px; }
+  .checklist-table .col-plan { width: 130px; font-size: 8pt; color: #666; white-space: nowrap; }
+  /* The two columns that get written in. Wide enough for a date and initials
+     in pen, which is wider than they look on screen. */
+  .checklist-table .col-actual { width: 95px; border-bottom: 0.5px solid #999; }
+  .checklist-table .col-initials { width: 70px; border-bottom: 0.5px solid #999; }
+  .checklist-table tr.is-check .col-step { color: #444; }
+  .checklist-table tr.is-check .col-plan { color: #999; }
+
+  /* Grows into whatever the page has left. Ruled with a repeating gradient
+     rather than a fixed number of divs, so a tall sheet gets more lines to
+     write on instead of a blank gap above the signature block. */
+  .checklist-notes { margin-top: 18px; display: flex; flex-direction: column; flex: 1; }
+  .checklist-label {
+    font-size: 6.5pt; text-transform: uppercase; letter-spacing: 0.07em; color: #777;
+  }
+  .checklist-notes .ruled {
+    flex: 1; min-height: 88px; margin-top: 4px;
+    background-image: repeating-linear-gradient(
+      to bottom, transparent, transparent 21.5px, #c8c8c8 21.5px, #c8c8c8 22px
+    );
+  }
+
+  .checklist-foot {
+    margin-top: auto; padding-top: 14px; border-top: 1px solid #111;
+    display: flex; align-items: flex-end; gap: 18px; flex-wrap: wrap;
+  }
+  .checklist-foot .sign { flex: 1; min-width: 120px; }
+  .checklist-foot .sign.wide { flex: 1.4; }
+  .checklist-foot .rule { border-bottom: 0.5px solid #111; height: 20px; }
+  .checklist-return { width: 100%; margin: 8px 0 0; font-size: 7pt; color: #888; }
 
   /* ── Summary cover sheet ───────────────────────────────────────────────── */
 
@@ -761,6 +866,12 @@ button.danger:hover:not(:disabled) { background: #fdf0ee; }
    in context, with what runs before and after still legible. */
 .bar.dimmed { opacity: 0.18; }
 .bar-stripe.dimmed { opacity: 0.18; }
+/* Critical work fades, but not out of sight. If the trade you are focused on
+   is waiting on something driving the finish, that is the thing you most need
+   to see — and at 18% it had vanished. */
+.bar.dimmed-critical { opacity: 0.5; }
+.bar-stripe.dimmed-critical { opacity: 0.5; }
+.table-row.dimmed-critical { opacity: 0.62; }
 /* The list fades with the chart. Dimming only the bars leaves the names at
    full strength, so the left-hand column still reads as "everything" and you
    cannot scan it for whose work is whose. Lighter than the bars because text
@@ -882,3 +993,8 @@ button.danger:hover:not(:disabled) { background: #fdf0ee; }
 .table-row[draggable='true'] { cursor: grab; }
 .table-row.dragging { opacity: 0.4; }
 .table-row.drop-target { box-shadow: inset 0 2px 0 var(--bar-critical); }
+
+/* Print mode switch — chart or checklists. */
+.print-mode { display: flex; gap: 4px; }
+.print-mode button { flex: 1; font-size: 13px; }
+.print-mode button.active { background: var(--ink); color: #fff; border-color: var(--ink); }

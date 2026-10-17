@@ -156,9 +156,16 @@ console.log('\n== a subcontractor sheet contains only their work ==')
   await page.locator('button:has-text("Print")').click()
   await page.waitForSelector('.print-dialog', { timeout: 10_000 })
 
-  const values = await page.locator('.print-dialog select').last().locator('option').evaluateAll(
-    (os) => os.map((o) => ({ value: o.value, text: o.textContent })),
-  )
+  // By label, not position. A select added to the dialog later makes
+  // `.last()` a different control — which is exactly what happened when the
+  // Steps chooser arrived after this.
+  const tradeSelect = page
+    .locator('.print-dialog label')
+    .filter({ hasText: /^Print only/ })
+    .locator('select')
+  const values = await tradeSelect
+    .locator('option')
+    .evaluateAll((os) => os.map((o) => ({ value: o.value, text: o.textContent })))
   const maintenance = values.find((v) => /maintenance/i.test(v.text ?? ''))
   check('the print dialog offers one trade at a time', Boolean(maintenance),
     values.map((v) => v.text).join(', '))
@@ -169,7 +176,7 @@ console.log('\n== a subcontractor sheet contains only their work ==')
   const allPath = `${OUT}/64-print-all.pdf`
   await page.pdf({ path: allPath, preferCSSPageSize: true, printBackground: true })
 
-  await page.locator('.print-dialog select').last().selectOption(maintenance.value)
+  await tradeSelect.selectOption(maintenance.value)
   await page.waitForTimeout(400)
 
   const rowsNote = (await page.locator('.print-dialog .hint').last().textContent()) ?? ''

@@ -358,6 +358,11 @@ export function ProjectView({ projectId, onBack }: { projectId: string; onBack()
         api.createTask(projectId, {
           name: newName.trim(),
           durationDays: Number(newDuration) || 0,
+          // Below whatever is selected. Appending always is wrong when
+          // someone is building out a section: they select the task they are
+          // working near, add the next one, and find it at the bottom of
+          // forty rows.
+          ...(selectedId ? { afterTaskId: selectedId } : {}),
         }),
       )
       if (ok) {
@@ -739,6 +744,8 @@ export function ProjectView({ projectId, onBack }: { projectId: string; onBack()
             categoryOf={categoryOf}
             categoryLabel={categoryLabel}
             dependencies={dependencies}
+            steps={steps}
+            expandedTasks={expanded}
             baseline={baseline}
             summary={summary}
             // The same row order the screen uses, so paper and screen agree.

@@ -187,6 +187,86 @@ console.log('\n== what reaches the paper ==')
   await page.emulateMedia({ media: 'screen' })
 }
 
+console.log('\n== steps and bar labels on the chart ==')
+{
+  await page.locator('.print-dialog button:has-text("Schedule chart")').click()
+  await page.waitForTimeout(300)
+  // No trade filter to clear: this suite runs on the seeded project, whose
+  // tasks carry no trade, so the "Print only" control is not rendered at all.
+  // The trade-filtered sheet is covered in categories-shoot.mjs, against a
+  // project that does have them.
+  await page.locator('.print-dialog select').first().selectOption('tabloid')
+
+  const stepSelect = page
+    .locator('.print-dialog label')
+    .filter({ hasText: /^Steps/ })
+    .locator('select')
+
+  await stepSelect.selectOption('none')
+  await page.waitForTimeout(500)
+  await page.emulateMedia({ media: 'print' })
+  await page.waitForTimeout(300)
+  check('with steps off, none are printed',
+    (await page.locator('.print-row.print-step').count()) === 0)
+  // The names beside the bars: on a 17-inch sheet, tracking a bar back to the
+  // name column is the thing this removes.
+  const labels = await page.locator('.print-bar-label').count()
+  check('task names print beside their bars', labels > 0, `${labels} labels`)
+  await page.emulateMedia({ media: 'screen' })
+
+  await stepSelect.selectOption('all')
+  await page.waitForTimeout(700)
+  await page.emulateMedia({ media: 'print' })
+  await page.waitForTimeout(400)
+  const stepRows = await page.locator('.print-row.print-step').count()
+  check('with steps on, they are', stepRows > 0, `${stepRows} step rows`)
+
+  // Each printed step must sit inside its own task's span — a trailing check
+  // used to land a day past the bar it belongs to.
+  const outside = await page.evaluate(() => {
+    const rows = [...document.querySelectorAll('.print-page')]
+    let bad = 0
+    for (const page of rows) {
+      const chart = page.querySelector('.print-chart')
+      if (!chart) continue
+      const width = chart.getBoundingClientRect().width
+      for (const el of page.querySelectorAll('.print-step-bar, .print-step-check')) {
+        const x = Number(el.getAttribute('x') ?? el.getAttribute('cx') ?? 0)
+        if (x < -1 || x > width + 1) bad++
+      }
+    }
+    return bad
+  })
+  check('and every step bar lands inside the chart', outside === 0, `${outside} outside`)
+  await page.emulateMedia({ media: 'screen' })
+}
+
+console.log('\n== checklists are a different document ==')
+{
+  await page.locator('.print-dialog button:has-text("Checklists")').click()
+  await page.waitForTimeout(600)
+  await page.emulateMedia({ media: 'print' })
+  await page.waitForTimeout(400)
+
+  const pages = await page.locator('.checklist-page').count()
+  check('one sheet per task with steps', pages > 0, `${pages} sheets`)
+  check('no Gantt on a checklist', (await page.locator('.print-chart').count()) === 0)
+
+  const first = page.locator('.checklist-page').first()
+  check('it carries a short reference to type back in',
+    /^T-[0-9A-F]{4}$/.test((await first.locator('.ref-code').textContent())?.trim() ?? ''),
+    (await first.locator('.ref-code').textContent())?.trim() ?? '(none)')
+  check('with tick boxes to mark off',
+    (await first.locator('.col-tick').count()) > 1,
+    `${await first.locator('.col-tick').count()} rows`)
+  check('and blank columns to write the date and initials in',
+    (await first.locator('.col-actual').count()) > 1)
+  check('somewhere to write what was found',
+    (await first.locator('.checklist-notes .ruled').count()) === 1)
+  check('and a sign-off', (await first.locator('.checklist-foot .sign').count()) >= 3)
+  await page.emulateMedia({ media: 'screen' })
+}
+
 console.log('\n== the subtitle persists ==')
 {
   // Closing saves, so the promise under the fields — "kept with the project" —

@@ -485,10 +485,18 @@ function TaskRow({
   if (task.status === 'in-progress') classes.push('in-progress')
   if (selected) classes.push('selected')
   if (blocked) classes.push('blocked')
-  // Faded, not hidden. Focusing on one trade should still show what runs
-  // before and after it — that context is most of the answer to "where do I
-  // fit", and hiding the rest answers a different question.
-  if (dimmed) classes.push('dimmed')
+  /*
+   * Faded, not hidden. Focusing on one trade should still show what runs
+   * before and after it — that context is most of the answer to "where do I
+   * fit", and hiding the rest answers a different question.
+   *
+   * Critical work fades less far. If the trade you are looking at is waiting
+   * on something on the critical path, that is the most important thing on
+   * the screen, and at 18% it had disappeared. A middle opacity rather than
+   * full colour, because on a late project most tasks are critical and
+   * exempting them outright would un-fade half the chart.
+   */
+  if (dimmed) classes.push(task.isCritical ? 'dimmed-critical' : 'dimmed')
 
   /*
    * In category mode the fill is overridden inline, because the colour is data
@@ -602,7 +610,9 @@ function TaskRow({
               y={barY}
               width={2.5}
               height={BAR_HEIGHT}
-              className={'bar-stripe' + (dimmed ? ' dimmed' : '')}
+              className={
+                'bar-stripe' + (dimmed ? (task.isCritical ? ' dimmed-critical' : ' dimmed') : '')
+              }
               style={{ fill: categoryColour.stripe }}
               pointerEvents="none"
             />

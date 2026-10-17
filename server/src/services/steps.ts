@@ -53,11 +53,24 @@ export function sequenceSteps(
   calendar: WorkCalendar,
   taskStart: string,
   steps: StepRow[],
+  /** The task's last working day, so trailing checks cannot fall past it. */
+  taskFinish?: string,
 ): SequencedStep[] {
   let cursor = calendar.snapForward(toDayIndex(taskStart))
+  const lastDay = taskFinish === undefined ? null : calendar.snapBack(toDayIndex(taskFinish))
 
   return steps.map((step) => {
-    const start = cursor
+    /*
+     * A check sits wherever the sequence has got to — except at the end,
+     * where the cursor has already stepped past the final day of work.
+     *
+     * Without the clamp, checks listed after the last dated step rendered a
+     * day beyond their own task's bar, which on a printed chart reads as work
+     * happening after the task finished.
+     */
+    const start =
+      step.duration_days === 0 && lastDay !== null && cursor > lastDay ? lastDay : cursor
+
     // Inclusive finish: a one-day step starts and finishes on the same day.
     // Deriving it as start + duration would report every step a day long.
     const finish = step.duration_days === 0 ? start : calendar.addWorkingDays(start, step.duration_days - 1)
