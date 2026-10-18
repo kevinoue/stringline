@@ -1520,3 +1520,32 @@ button.danger:hover:not(:disabled) { background: var(--bad-bg); border-color: va
 /* The selected-state treatment is `button.active` and lives with the other
    button rules. Restating the background here flattened the gradient and left
    this one toggle looking different from every other toggle in the app. */
+
+/* ── Security log ─────────────────────────────────────────────────────────── */
+
+/* The count that should make somebody open the log, on the outside of it. */
+.sec-badge {
+  margin-left: 8px; padding: 1px 7px; border-radius: 9px;
+  font-size: 10px; font-weight: 600; letter-spacing: 0.02em; text-transform: none;
+  background: var(--warn-bg); color: var(--warn-ink); border: 1px solid var(--warn-line);
+}
+.sec-badge.bad { background: var(--bad-bg); color: var(--bad-ink); border-color: var(--bad-line); }
+
+.sec-log { font-size: 12px; }
+.sec-log td { padding: 5px 6px; vertical-align: top; }
+.sec-when {
+  white-space: nowrap; font-family: var(--mono); font-size: 11px; color: var(--ink-soft);
+}
+/* Monospaced because the entire value of an address here is comparing it by
+   eye against another one. */
+.sec-ip {
+  white-space: nowrap; text-align: right;
+  font-family: var(--mono); font-size: 11px; color: var(--ink-faint);
+}
+/* A failed sign-in is not an error — it is usually a typo. Marked, not alarmed:
+   a log where every other row is red teaches people to ignore red. */
+.sec-log tr.alarming .sec-when { color: var(--warn-ink); }
+.sec-log tr.alarming td:nth-child(2) strong { color: var(--warn-ink); }
+
+.modal-wide hr { width: 100%; border: 0; border-top: 1px solid var(--line); margin: 10px 0 2px; }
+.modal hr { width: 100%; border: 0; border-top: 1px solid var(--line); margin: 12px 0 4px; }

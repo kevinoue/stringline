@@ -141,7 +141,7 @@ check("deleting it twice is a 404, not a crash", st == 404, f"got {st}")
 
 print("\n== permissions and isolation ==")
 _, o = call("POST", "/team/invites", {"email": "hand@phase.test", "role": "field"}, owner)
-_, o = call("POST", f"/team/invites/{o['invite']['token']}/accept", {"password": "fieldpassword"})
+_, o = call("POST", f"/team/invites/{o['invite']['token']}/accept", {"password": "gravel-truck-9am"})
 field = o["token"]
 
 st, _ = call("POST", f"/projects/{project}/phases", {"name": "Sneaky"}, field)

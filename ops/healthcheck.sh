@@ -125,7 +125,64 @@ if [ -n "$problems" ]; then
     if [ -f "$ALERT_ENV" ]; then
         # shellcheck disable=SC1090
         . "$ALERT_ENV"
-        if [ -n "${RESEND_API_KEY:-}" ] && [ -n "${ALERT_EMAIL:-}" ]; then
+
+        sent=no
+
+        # ── SMTP, via curl ───────────────────────────────────────────────────
+        #
+        # The same mailbox the app itself sends from, so configuring mail once
+        # makes both work. curl speaks SMTP, which means no mail client has to
+        # be installed on the NAS — `sendmail` is not present in the Container
+        # Manager image and `ssmtp` would be another thing to maintain.
+        #
+        # `--ssl-reqd` is the important flag: without it curl will happily
+        # continue in the clear if STARTTLS is refused, which hands the app
+        # password to the network.
+        if [ -n "${SMTP_USER:-}" ] && [ -n "${SMTP_PASS:-}" ] && [ -n "${ALERT_EMAIL:-}" ]; then
+            case "${SMTP_PRESET:-}" in
+                gmail)  smtp_url="smtps://smtp.gmail.com:465" ;;
+                icloud) smtp_url="smtp://smtp.mail.me.com:587" ;;
+                *)      smtp_url="${SMTP_URL:-}" ;;
+            esac
+
+            if [ -n "$smtp_url" ]; then
+                from=${SMTP_FROM:-$SMTP_USER}
+                msg=$(mktemp)
+                # A real message, headers and all. A bare body with no Date or
+                # Message-ID is the kind of mail that silently scores as spam,
+                # and an alert in a spam folder is an alert nobody gets.
+                {
+                    echo "From: Stringline <$from>"
+                    echo "To: $ALERT_EMAIL"
+                    echo "Subject: Stringline is unhealthy"
+                    echo "Date: $(date -R 2>/dev/null || date)"
+                    echo "Content-Type: text/plain; charset=utf-8"
+                    echo
+                    echo "$problems"
+                    echo
+                    echo "Checked at $(date '+%Y-%m-%d %H:%M:%S')"
+                } > "$msg"
+
+                if curl -fsS --max-time 30 --ssl-reqd \
+                    --url "$smtp_url" \
+                    --user "$SMTP_USER:$SMTP_PASS" \
+                    --mail-from "$from" \
+                    --mail-rcpt "$ALERT_EMAIL" \
+                    --upload-file "$msg" >/dev/null 2>&1
+                then
+                    echo "(alert emailed to $ALERT_EMAIL via $SMTP_USER)"
+                    sent=yes
+                else
+                    echo "(SMTP ALERT FAILED — check SMTP_PASS is an app password)"
+                fi
+                rm -f "$msg"
+            else
+                echo "(SMTP_PRESET not recognised and no SMTP_URL — cannot send)"
+            fi
+        fi
+
+        # ── Resend, if that is what is configured ────────────────────────────
+        if [ "$sent" = no ] && [ -n "${RESEND_API_KEY:-}" ] && [ -n "${ALERT_EMAIL:-}" ]; then
             # The problems string is interpolated into JSON, so the characters
             # that would break it have to go. A mangled alert still arrives;
             # an invalid one is rejected and you hear nothing.
@@ -139,11 +196,14 @@ if [ -n "$problems" ]; then
                      \"text\":\"$safe\"}" >/dev/null 2>&1
             then
                 echo "(alert emailed to $ALERT_EMAIL)"
+                sent=yes
             else
                 echo "(ALERT EMAIL FAILED — the problem above went unreported)"
             fi
-        else
-            echo "(no RESEND_API_KEY/ALERT_EMAIL in $ALERT_ENV — logged only)"
+        fi
+
+        if [ "$sent" = no ]; then
+            echo "(no mail configured in $ALERT_ENV — logged only, nobody has been told)"
         fi
     else
         echo "(no $ALERT_ENV — logged only, nobody has been told)"

@@ -24,7 +24,8 @@ import {
   type Role,
 } from '../middleware/auth.js'
 import * as email from '../services/email.js'
-import { BCRYPT_ROUNDS, MIN_PASSWORD_LENGTH } from '../services/provisioning.js'
+import { BCRYPT_ROUNDS } from '../services/provisioning.js'
+import { checkPassword, clientIp, record, userAgent } from '../services/security.js'
 
 const router = Router()
 
@@ -63,12 +64,20 @@ function inviteUrl(code: string, slug: string): string {
 /**
  * Everyone in the company, plus any invites still outstanding.
  *
- * Readable by any member, not just owners. A field user benefits from knowing
- * who else is on the job, and none of it is sensitive — password hashes are
- * never selected here.
+ * **Not readable by a client.** A client seat is an outside party — the owner
+ * of the building, the bank, the architect — and their whole design is that
+ * they see milestones and dates and nothing else. Handing them the staff list
+ * with everyone's email address is a leak of the customer's data to a third
+ * party, and it was doing exactly that: the route authenticated and then
+ * trusted anyone who got through.
+ *
+ * Field crew do see the list, because knowing who else is on the job is the
+ * point of it, but without the pending invites — who is being hired is the
+ * company's business, not the crew's.
  */
-router.get('/', authenticate, async (req: Request, res: Response) => {
+router.get('/', authenticate, requireRole('owner', 'planner', 'field'), async (req, res) => {
   const companyId = req.user!.companyId
+  const privileged = req.user!.role === 'owner' || req.user!.role === 'planner'
 
   const members = await pool.query(
     `SELECT id, name, email, role, is_active, created_at
@@ -80,16 +89,23 @@ router.get('/', authenticate, async (req: Request, res: Response) => {
     [companyId],
   )
 
-  const invites = await pool.query(
-    `SELECT i.id, i.email, i.name, i.role, i.token, i.expires_at, i.created_at,
-            u.name AS invited_by
-       FROM invites i
-       LEFT JOIN users u ON u.id = i.created_by
-      WHERE i.company_id = $1 AND i.accepted_at IS NULL AND i.revoked_at IS NULL
-        AND i.expires_at > NOW()
-      ORDER BY i.created_at DESC`,
-    [companyId],
-  )
+  /*
+   * Pending invites carry live invite codes, so this is only ever read by
+   * someone who could create one anyway. A field user seeing the list would be
+   * handed a working credential for a seat that may be a planner's.
+   */
+  const invites = privileged
+    ? await pool.query(
+        `SELECT i.id, i.email, i.name, i.role, i.token, i.expires_at, i.created_at,
+                u.name AS invited_by
+           FROM invites i
+           LEFT JOIN users u ON u.id = i.created_by
+          WHERE i.company_id = $1 AND i.accepted_at IS NULL AND i.revoked_at IS NULL
+            AND i.expires_at > NOW()
+          ORDER BY i.created_at DESC`,
+        [companyId],
+      )
+    : { rows: [] }
 
   const { rows: company } = await pool.query<{ slug: string }>(
     'SELECT slug FROM companies WHERE id = $1',
@@ -98,7 +114,10 @@ router.get('/', authenticate, async (req: Request, res: Response) => {
   const slug = company[0]?.slug ?? ''
 
   res.json({
-    members: members.rows,
+    // Field crew get names and roles; the addresses belong to the office.
+    members: privileged
+      ? members.rows
+      : members.rows.map(({ email: _email, ...rest }) => rest),
     // Which row is the person asking. The UI uses it to stop offering someone
     // the buttons that would lock them out of their own company — the server
     // refuses those anyway, but an offer that always errors is a worse answer
@@ -176,6 +195,16 @@ router.post('/invites', authenticate, requireRole('owner', 'planner'), async (re
       inviteUrl: url,
     })
 
+    await record({
+      companyId,
+      actorId: req.user!.id,
+      kind: 'invite.created',
+      subject: normalised,
+      detail: `Invited as ${role}${delivery.sent ? ', emailed' : ', not emailed'}`,
+      ip: clientIp(req),
+      userAgent: userAgent(req),
+    })
+
     res.status(201).json({
       invite: { ...invite, url, invited_by: req.user!.name },
       emailed: delivery.sent,
@@ -250,11 +279,6 @@ router.post('/invites/:code/accept', async (req: Request, res: Response) => {
     res.status(400).json({ error: 'password is required' })
     return
   }
-  if (String(password).length < MIN_PASSWORD_LENGTH) {
-    res.status(400).json({ error: `Password must be at least ${MIN_PASSWORD_LENGTH} characters` })
-    return
-  }
-
   const code = String(req.params.code).toUpperCase().trim()
 
   try {
@@ -277,6 +301,27 @@ router.post('/invites/:code/accept', async (req: Request, res: Response) => {
 
       const invite = rows[0]
       if (!invite || invite.expired) return { error: 'That invite is not valid any more' as const }
+
+      /*
+       * Checked here rather than at the top of the handler, because the policy
+       * needs the invite's email and the company code to reject a password
+       * built from either — and neither is known until the code resolves.
+       *
+       * The cost is that a weak password is reported after the lookup instead
+       * of before it. The benefit is that the person joining is held to the
+       * same rule as the person who invited them, which is the half of the
+       * policy that was missing: an invited planner could previously set an
+       * eight-character password on an account with full schedule access.
+       */
+      const { rows: forCompany } = await client.query<{ slug: string }>(
+        'SELECT slug FROM companies WHERE id = $1',
+        [invite.company_id],
+      )
+      const verdict = checkPassword(String(password), [
+        invite.email.split('@')[0] ?? '',
+        forCompany[0]?.slug ?? '',
+      ])
+      if (!verdict.ok) return { weak: verdict.reason! }
 
       const hash = await bcrypt.hash(String(password), BCRYPT_ROUNDS)
       const { rows: created } = await client.query<{ id: string; token_version: number }>(
@@ -304,14 +349,29 @@ router.post('/invites/:code/accept', async (req: Request, res: Response) => {
         companyId: invite.company_id,
         tokenVersion: created[0]!.token_version,
         role: invite.role,
+        email: invite.email,
         slug: company[0]!.slug,
       }
     })
 
+    if ('weak' in result) {
+      res.status(400).json({ error: result.weak })
+      return
+    }
     if ('error' in result) {
       res.status(404).json({ error: result.error })
       return
     }
+
+    await record({
+      companyId: result.companyId,
+      userId: result.userId,
+      kind: 'invite.accepted',
+      subject: result.email,
+      detail: `Joined as ${result.role}`,
+      ip: clientIp(req),
+      userAgent: userAgent(req),
+    })
 
     // Signed in immediately. Making someone type a password they set two
     // seconds ago is the kind of friction that loses a field crew.
@@ -374,6 +434,17 @@ router.post('/members/:id/reset-password', authenticate, requireRole('owner'), a
     companyName: company[0]!.name,
     companySlug: company[0]!.slug,
     temporaryPassword: temporary,
+  })
+
+  await record({
+    companyId: req.user!.companyId,
+    userId: member.id,
+    actorId: req.user!.id,
+    kind: 'password.reset.by_owner',
+    subject: member.email,
+    detail: `${req.user!.name} reset this password${delivery.sent ? ' and emailed it' : ''}`,
+    ip: clientIp(req),
+    userAgent: userAgent(req),
   })
 
   res.json({
@@ -439,7 +510,104 @@ router.patch('/members/:id', authenticate, requireRole('owner'), async (req, res
     res.status(result.error.startsWith('No such') ? 404 : 400).json({ error: result.error })
     return
   }
-  res.json({ member: result.member })
+
+  const member = result.member as { id: string; name: string; email: string; role: Role; is_active: boolean }
+  const kind =
+    isActive === false ? 'member.disabled' : isActive === true ? 'member.enabled' : 'member.role_changed'
+
+  await record({
+    companyId: req.user!.companyId,
+    userId: member.id,
+    actorId: req.user!.id,
+    kind,
+    subject: member.email,
+    detail:
+      kind === 'member.role_changed'
+        ? `${req.user!.name} changed the role to ${member.role}`
+        : `${req.user!.name} ${kind === 'member.disabled' ? 'disabled' : 're-enabled'} this account`,
+    ip: clientIp(req),
+    userAgent: userAgent(req),
+  })
+
+  /*
+   * Tell them. A change of standing signs them out, and an account that stops
+   * working with no explanation is indistinguishable from a broken app —
+   * people file a bug instead of asking the owner why.
+   */
+  const { rows: companyRow } = await pool.query<{ name: string }>(
+    'SELECT name FROM companies WHERE id = $1',
+    [req.user!.companyId],
+  )
+  void email.sendSecurityNotice({
+    to: member.email,
+    name: member.name,
+    what:
+      kind === 'member.disabled'
+        ? 'Your Stringline access was turned off'
+        : kind === 'member.enabled'
+          ? 'Your Stringline access was restored'
+          : 'Your Stringline role was changed',
+    detail:
+      kind === 'member.role_changed'
+        ? `${req.user!.name} changed your role to ${member.role}. You have been signed out and will need to sign in again.`
+        : kind === 'member.disabled'
+          ? `${req.user!.name} turned off your access to this company.`
+          : `${req.user!.name} restored your access. You can sign in again.`,
+    companyName: companyRow[0]?.name ?? 'your company',
+    when: new Date(),
+    ip: clientIp(req) ?? undefined,
+  })
+
+  res.json({ member })
+})
+
+/**
+ * The security log.
+ *
+ * Owners only, and the reason is not squeamishness — it carries IP addresses
+ * and every failed sign-in, which is a record of where the team was and when.
+ * Useful to the person accountable for the company, nobody else's business.
+ *
+ * This is the artefact that matters after an incident. Everything else in this
+ * file is about preventing one; without this, nobody can answer what happened.
+ */
+router.get('/security-log', authenticate, requireRole('owner'), async (req, res) => {
+  const limit = Math.min(Number(req.query.limit ?? 100), 500)
+
+  const { rows } = await pool.query(
+    `SELECT e.id, e.kind, e.subject, e.detail, e.ip, e.user_agent, e.at,
+            actor.name AS actor_name,
+            subject_user.name AS subject_name
+       FROM auth_events e
+       LEFT JOIN users actor ON actor.id = e.actor_id
+       LEFT JOIN users subject_user ON subject_user.id = e.user_id
+      WHERE e.company_id = $1
+      ORDER BY e.at DESC
+      LIMIT $2`,
+    [req.user!.companyId, limit],
+  )
+
+  /*
+   * Failures in the last day, counted separately.
+   *
+   * A log is only read when somebody already suspects something. This is the
+   * number that makes them suspect it, so the UI can surface it without
+   * anybody going looking.
+   */
+  const { rows: recent } = await pool.query<{ failed: string; blocked: string }>(
+    `SELECT
+       COUNT(*) FILTER (WHERE kind = 'login.failed')::text  AS failed,
+       COUNT(*) FILTER (WHERE kind = 'login.blocked')::text AS blocked
+     FROM auth_events
+     WHERE company_id = $1 AND at > NOW() - INTERVAL '24 hours'`,
+    [req.user!.companyId],
+  )
+
+  res.json({
+    events: rows,
+    failedLast24h: Number(recent[0]?.failed ?? 0),
+    blockedLast24h: Number(recent[0]?.blocked ?? 0),
+  })
 })
 
 export default router

@@ -307,10 +307,106 @@ export function Team({ onClose }: { onClose(): void }) {
           </>
         )}
 
+        <SecurityLog />
+
         <div className="modal-actions">
           <button onClick={onClose}>Close</button>
         </div>
       </div>
     </div>
+  )
+}
+
+/** Plain English for an event kind, so the log reads rather than decodes. */
+const EVENT_WORDS: Record<string, string> = {
+  'login.succeeded': 'signed in',
+  'login.failed': 'failed sign-in',
+  'login.blocked': 'blocked after repeated failures',
+  'password.changed': 'changed their password',
+  'password.reset.requested': 'asked for a reset link',
+  'password.reset.completed': 'reset their password',
+  'password.reset.by_owner': 'password reset by an owner',
+  'sessions.ended': 'signed out everywhere',
+  'invite.created': 'was invited',
+  'invite.accepted': 'accepted an invite',
+  'invite.revoked': 'invite revoked',
+  'member.role_changed': 'role changed',
+  'member.disabled': 'access turned off',
+  'member.enabled': 'access restored',
+}
+
+const ALARMING = new Set(['login.failed', 'login.blocked'])
+
+/**
+ * Who did what, and from where.
+ *
+ * Collapsed by default, and that is deliberate: it is a record to consult, not
+ * a dashboard to watch. What is *not* collapsed is the count of failed and
+ * blocked sign-ins in the last day — a log nobody opens tells nobody anything,
+ * so the one number that should make somebody open it sits on the outside.
+ *
+ * Owners only. The server enforces that; this hides itself on a 403 rather
+ * than showing an error, because a planner seeing "forbidden" would reasonably
+ * think something was broken.
+ */
+function SecurityLog() {
+  const [open, setOpen] = useState(false)
+  const [log, setLog] = useState<Awaited<ReturnType<typeof api.securityLog>> | null>(null)
+  const [allowed, setAllowed] = useState(true)
+
+  useEffect(() => {
+    api
+      .securityLog()
+      .then(setLog)
+      .catch((e) => {
+        if (e instanceof ApiError && e.status === 403) setAllowed(false)
+      })
+  }, [])
+
+  if (!allowed || !log) return null
+
+  const alarming = log.failedLast24h > 0 || log.blockedLast24h > 0
+
+  return (
+    <>
+      <h3>
+        Security
+        {alarming && (
+          <span className={log.blockedLast24h > 0 ? 'sec-badge bad' : 'sec-badge'}>
+            {log.failedLast24h} failed
+            {log.blockedLast24h > 0 && `, ${log.blockedLast24h} blocked`} in 24h
+          </span>
+        )}
+      </h3>
+
+      <p className="hint">
+        {alarming
+          ? 'Failed sign-ins are normal in small numbers — a mistyped password is one. A run of them against one person, or from an address nobody recognises, is not.'
+          : 'No failed sign-ins in the last day.'}{' '}
+        <button className="linkish" onClick={() => setOpen((v) => !v)}>
+          {open ? 'Hide the log' : 'Show the log'}
+        </button>
+      </p>
+
+      {open && (
+        <table className="team-table sec-log">
+          <tbody>
+            {log.events.map((e) => (
+              <tr key={e.id} className={ALARMING.has(e.kind) ? 'alarming' : ''}>
+                <td className="sec-when">{e.at.replace('T', ' ').slice(0, 16)}</td>
+                <td>
+                  <strong>{e.subject_name ?? e.subject ?? 'someone'}</strong>{' '}
+                  {EVENT_WORDS[e.kind] ?? e.kind}
+                  {e.detail && <span className="sub"> · {e.detail}</span>}
+                </td>
+                {/* Monospaced, because the whole value of an address here is
+                    comparing it by eye to another one. */}
+                <td className="sec-ip">{e.ip ?? ''}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </>
   )
 }

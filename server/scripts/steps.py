@@ -263,7 +263,7 @@ check("the steps went with it",
 
 print("\n== who may do what ==")
 _, o = call("POST", "/team/invites", {"email": "hand@step.test", "role": "field"}, owner)
-_, o = call("POST", f"/team/invites/{o['invite']['token']}/accept", {"password": "fieldpassword"})
+_, o = call("POST", f"/team/invites/{o['invite']['token']}/accept", {"password": "gravel-truck-9am"})
 field = o["token"]
 
 _, s2 = call("GET", f"/projects/{p2}/schedule", None, field)

@@ -101,13 +101,13 @@ st, o = call("POST", f"/team/invites/{code}/accept", {"password": "short"})
 check("a short password is rejected", st == 400, f"got {st}")
 
 st, o = call("POST", f"/team/invites/{code}/accept",
-             {"password": "fieldpassword", "name": "Frank Field"})
+             {"password": "gravel-truck-9am", "name": "Frank Field"})
 check("the invite is accepted", st == 201, f"got {st} {str(o)[:120]}")
 field = (o or {}).get("token")
 check("and they are signed in straight away", bool(field), str(o)[:100])
 check("in the role they were invited as", (o or {}).get("role") == "field", str(o))
 
-st, _ = call("POST", f"/team/invites/{code}/accept", {"password": "anotherpassword"})
+st, _ = call("POST", f"/team/invites/{code}/accept", {"password": "second-gantry-hoist"})
 check("the same code cannot be used twice", st == 404, f"got {st}")
 
 st, o = call("GET", "/team", None, owner)
@@ -135,7 +135,7 @@ check("revoking twice is a 404, not a crash", st == 404, f"got {st}")
 print("\n== only an owner can mint an owner ==")
 _, o = call("POST", "/team/invites", {"email": "planner@team.test", "role": "planner"}, owner)
 pcode = o["invite"]["token"]
-_, o = call("POST", f"/team/invites/{pcode}/accept", {"password": "plannerpass", "name": "Pat Planner"})
+_, o = call("POST", f"/team/invites/{pcode}/accept", {"password": "brass-rail-ladder", "name": "Pat Planner"})
 planner = o["token"]
 st, _ = call("POST", "/team/invites", {"email": "owner2@team.test", "role": "owner"}, planner)
 check("a planner cannot invite an owner", st == 403, f"got {st}")
@@ -161,7 +161,7 @@ check("the message says they were signed out",
 
 check("the teammate's old session is dead", call("GET", "/projects", None, field)[0] == 401)
 st, _ = call("POST", "/auth/login",
-             {"slug": slug, "email": "field.guy@team.test", "password": "fieldpassword"})
+             {"slug": slug, "email": "field.guy@team.test", "password": "gravel-truck-9am"})
 check("their old password no longer works", st == 401, f"got {st}")
 st, o = call("POST", "/auth/login",
              {"slug": slug, "email": "field.guy@team.test", "password": temp})
@@ -194,7 +194,7 @@ print("\n== the company can never be left without an owner ==")
 # A second owner, so there is one to demote.
 _, o = call("POST", "/team/invites", {"email": "owner2@team.test", "role": "owner"}, owner)
 _, o = call("POST", f"/team/invites/{o['invite']['token']}/accept",
-            {"password": "owner2pass", "name": "Oscar Owner"})
+            {"password": "kerb-stone-level", "name": "Oscar Owner"})
 owner2 = o["token"]
 _, o = call("GET", "/team", None, owner)
 owner2_id = {m["email"]: m for m in o["members"]}["owner2@team.test"]["id"]
@@ -209,7 +209,7 @@ st, o = call("PATCH", f"/team/members/{owner_id}", {"role": "planner"}, owner2)
 check("demotion killed their existing session", st == 401, f"got {st}")
 
 _, o = call("POST", "/auth/login",
-            {"slug": slug, "email": "owner2@team.test", "password": "owner2pass"})
+            {"slug": slug, "email": "owner2@team.test", "password": "kerb-stone-level"})
 owner2 = o["token"]
 st, o = call("PATCH", f"/team/members/{owner_id}", {"role": "planner"}, owner2)
 check("and signing back in, they are a planner who cannot change roles", st == 403, f"got {st}")

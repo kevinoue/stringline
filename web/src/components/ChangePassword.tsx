@@ -1,5 +1,16 @@
 import { useState } from 'react'
-import { api, ApiError, setToken } from '../api/client.js'
+import { api, ApiError, clearToken, setToken } from '../api/client.js'
+
+/**
+ * Kept in step with `MIN_PASSWORD_LENGTH` on the server by hand.
+ *
+ * Only ever the *earlier* of the two checks — the server is the one that
+ * decides, and this exists so the form can say so before the round trip
+ * rather than after. If they drift, the worst case is a rejection the user
+ * could have been warned about, never an accepted password that should not
+ * have been.
+ */
+const MIN_PASSWORD = 10
 
 /**
  * Change your own password.
@@ -21,7 +32,7 @@ export function ChangePassword({ onClose }: { onClose(): void }) {
   const [done, setDone] = useState<string | null>(null)
 
   const mismatch = confirm.length > 0 && next !== confirm
-  const tooShort = next.length > 0 && next.length < 8
+  const tooShort = next.length > 0 && next.length < MIN_PASSWORD
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault()
@@ -93,16 +104,59 @@ export function ChangePassword({ onClose }: { onClose(): void }) {
               />
             </label>
 
-            {tooShort && <p className="hint">At least 8 characters.</p>}
+            {tooShort && (
+              <p className="hint">
+                At least {MIN_PASSWORD} characters. A short phrase you will remember beats a
+                short password you will not — and it must not contain your email address or
+                company code.
+              </p>
+            )}
             {mismatch && <p className="error">The two new passwords do not match.</p>}
             {error && <p className="error">{error}</p>}
             <p className="hint">This signs you out on every other device.</p>
 
             <button
               type="submit"
-              disabled={busy || !current || next.length < 8 || next !== confirm}
+              className="primary"
+              disabled={busy || !current || next.length < MIN_PASSWORD || next !== confirm}
             >
               {busy ? 'Changing…' : 'Change password'}
+            </button>
+
+            {/*
+              Separate from changing the password, and deliberately reachable
+              without one.
+
+              The situation it is for is "I signed in on a machine I should
+              not have" or "I have left my laptop somewhere" — at which point
+              demanding the current password is friction in front of the one
+              action that limits the damage. The worst a stolen session can do
+              with this is sign itself out.
+            */}
+            <hr />
+            <p className="hint">
+              Signed in somewhere you should not be? This ends every session, including this
+              one, without changing your password.
+            </p>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => {
+                if (!confirmDialog('Sign out of every device, including this one?')) return
+                setBusy(true)
+                api
+                  .signOutEverywhere()
+                  .then(() => {
+                    clearToken()
+                    location.reload()
+                  })
+                  .catch((e) => {
+                    setError(e instanceof ApiError ? e.message : String(e))
+                    setBusy(false)
+                  })
+              }}
+            >
+              Sign out everywhere
             </button>
           </>
         )}
@@ -110,3 +164,6 @@ export function ChangePassword({ onClose }: { onClose(): void }) {
     </div>
   )
 }
+
+// Named so the call above reads as a question rather than as a global.
+const confirmDialog = (message: string): boolean => confirm(message)

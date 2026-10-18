@@ -13,13 +13,22 @@
 import bcrypt from 'bcryptjs'
 import type { PoolClient } from 'pg'
 import { transaction } from '../db/pool.js'
+import { checkPassword, MIN_PASSWORD_LENGTH as POLICY_MINIMUM } from './security.js'
 
 export const BCRYPT_ROUNDS = 12
 
 /** 3–40 characters, lowercase, no leading or trailing hyphen. */
 export const SLUG_PATTERN = /^[a-z0-9][a-z0-9-]{1,38}[a-z0-9]$/
 
-export const MIN_PASSWORD_LENGTH = 8
+/**
+ * Re-exported from the policy rather than declared here.
+ *
+ * There were two minimums in the codebase — this one and the one the policy
+ * enforces — and the weaker of them governed whichever route happened to
+ * import it. The owner's own password was the one created under the weaker
+ * rule, which is precisely the wrong way round.
+ */
+export const MIN_PASSWORD_LENGTH = POLICY_MINIMUM
 
 export interface NewCompany {
   companyName: string
@@ -68,11 +77,15 @@ export function validateNewCompany(input: Partial<NewCompany>): NewCompany {
       'Company code must be 3–40 characters, lowercase letters, numbers and hyphens',
     )
   }
-  if (String(password).length < MIN_PASSWORD_LENGTH) {
-    throw new ProvisioningError(
-      400,
-      `Password must be at least ${MIN_PASSWORD_LENGTH} characters`,
-    )
+  // The company code is checked against the password too: "acme" / "acme1234"
+  // is the first guess anyone makes, and no lockout saves you from a correct
+  // first guess.
+  const verdict = checkPassword(String(password), [
+    String(email).split('@')[0] ?? '',
+    normalisedSlug,
+  ])
+  if (!verdict.ok) {
+    throw new ProvisioningError(400, verdict.reason!)
   }
 
   return {

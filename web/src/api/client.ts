@@ -15,6 +15,7 @@ import type {
   ScheduleProject,
   Step,
   TaskDetail,
+  SecurityEvent,
   TeamView,
   Template,
 } from './types.js'
@@ -160,6 +161,16 @@ export const api = {
 
   updateMember: (id: string, changes: { role?: Role; isActive?: boolean }) =>
     request<{ member: Member }>('PATCH', `/team/members/${id}`, changes),
+
+  /** Owners only. Carries IP addresses, so the server refuses everyone else. */
+  securityLog: () =>
+    request<{
+      events: SecurityEvent[]
+      failedLast24h: number
+      blockedLast24h: number
+    }>('GET', '/team/security-log'),
+
+  signOutEverywhere: () => request<{ message: string }>('POST', '/auth/sign-out-everywhere'),
 
   // ── Password recovery ─────────────────────────────────────────────────────
 

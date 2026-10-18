@@ -32,28 +32,77 @@ app.use(express.json({ limit: '2mb' }))
 const api = express.Router()
 
 /**
- * Login is the endpoint worth brute-forcing, so it gets its own tighter budget.
+ * The broad limit, applied to everything including auth.
+ *
+ * Registered before any route so it genuinely covers all of them. It used to
+ * be mounted after `/auth`, which meant the auth routes never reached it and
+ * were governed only by the tight limit below — fine for login, wrong for the
+ * ordinary requests that share that prefix.
+ */
+api.use(
+  rateLimit({ windowMs: 15 * 60 * 1000, limit: 1000, standardHeaders: true, legacyHeaders: false }),
+)
+
+/**
+ * The tight limit, for the handful of endpoints where a request is a *guess*.
  *
  * Configurable because a test run signs up a dozen throwaway companies and
  * trips the production figure in seconds — at which point every suite fails
- * with a JSON parse error on an HTML rate-limit page, which looks like a bug in
+ * with a JSON parse error on a rate-limit page, which looks like a bug in
  * whatever was being tested. Production keeps the default.
  */
 const AUTH_RATE_LIMIT = Number(process.env.AUTH_RATE_LIMIT ?? 20)
+const credentialLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: AUTH_RATE_LIMIT,
+  standardHeaders: true,
+  legacyHeaders: false,
+  // JSON, so a client that hits it gets something it can actually parse.
+  message: { error: 'Too many attempts. Please wait a few minutes.' },
+  /*
+   * Successes are counted too, deliberately.
+   *
+   * `skipSuccessfulRequests` is tempting — a sign-in that worked is not a
+   * guess — but `/signup` is on this list and a *successful* signup is exactly
+   * what you want to cap. Skipping successes would leave a stranger able to
+   * mint companies on this instance without limit.
+   *
+   * The cost is a shared office address spending budget on ordinary sign-ins,
+   * and twenty in a quarter of an hour is far more than a small team does.
+   * Brute force is handled properly by the per-identifier lockout in
+   * `services/security.ts`; this is only the outer backstop.
+   */
+})
+
+/**
+ * Which paths under `/auth` are guesses, by name.
+ *
+ * This list exists because the tight limiter used to cover the whole `/auth`
+ * prefix — and `/auth/me` lives there, is called on every page load, and is
+ * already authenticated. Twenty page loads in a quarter of an hour, which is a
+ * slow morning, and the user could no longer sign in. A limit that punishes
+ * ordinary use is one people route around.
+ */
+const GUESSABLE = new Set([
+  '/login',
+  '/signup',
+  '/change-password',
+  '/forgot-password',
+  '/reset-password',
+])
+
 api.use(
   '/auth',
-  rateLimit({
-    windowMs: 15 * 60 * 1000,
-    limit: AUTH_RATE_LIMIT,
-    standardHeaders: true,
-    legacyHeaders: false,
-    // JSON, so a client that hits it gets something it can actually parse.
-    message: { error: 'Too many attempts. Please wait a few minutes.' },
-  }),
+  (req, res, next) => {
+    if (GUESSABLE.has(req.path)) {
+      credentialLimiter(req, res, next)
+      return
+    }
+    next()
+  },
   authRoutes,
-  // Mounted inside the same `/auth` block rather than as a second `api.use`,
-  // which would stack two limiters on every request that reaches either. The
-  // reset routes carry their own tighter, hourly limit internally.
+  // Mounted inside the same block so the path filter above governs both. The
+  // reset routes also carry their own tighter, hourly, per-account limit.
   passwordResetRoutes,
 )
 /**
@@ -76,9 +125,24 @@ api.use(
   setupRoutes,
 )
 
+/**
+ * Redeeming an invite is a guess too.
+ *
+ * A code is 44 bits, so this is not what stops it being guessed — the entropy
+ * is. It stops a host sitting on the endpoint indefinitely, and it is the only
+ * limit between a stranger and the company name a valid code reveals.
+ */
 api.use(
-  rateLimit({ windowMs: 15 * 60 * 1000, limit: 1000, standardHeaders: true, legacyHeaders: false }),
+  '/team/invites',
+  rateLimit({
+    windowMs: 15 * 60 * 1000,
+    limit: Number(process.env.INVITE_RATE_LIMIT ?? 60),
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: 'Too many attempts. Please wait a few minutes.' },
+  }),
 )
+
 api.use('/team', teamRoutes)
 api.use('/categories', categoryRoutes)
 api.use('/projects', projectRoutes)

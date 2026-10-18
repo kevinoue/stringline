@@ -285,3 +285,22 @@ export interface TeamView {
   /** Only owners and planners consume one. Field and client seats are free. */
   seatsUsed: number
 }
+
+/**
+ * One line of the security log.
+ *
+ * `subject` is the address as it was at the time, denormalised on the server,
+ * so an event still reads properly after the account it refers to is gone —
+ * which is exactly when somebody goes looking.
+ */
+export interface SecurityEvent {
+  id: string
+  kind: string
+  subject: string | null
+  detail: string | null
+  ip: string | null
+  user_agent: string | null
+  at: string
+  actor_name: string | null
+  subject_name: string | null
+}

@@ -25,7 +25,8 @@ import rateLimit from 'express-rate-limit'
 import { pool, transaction } from '../db/pool.js'
 import { resolveCompanyBySlug } from '../middleware/company.js'
 import * as email from '../services/email.js'
-import { BCRYPT_ROUNDS, MIN_PASSWORD_LENGTH } from '../services/provisioning.js'
+import { BCRYPT_ROUNDS } from '../services/provisioning.js'
+import { checkPassword, clientIp, record, userAgent } from '../services/security.js'
 
 const router = Router()
 
@@ -138,6 +139,15 @@ router.post('/forgot-password', resetLimiter, async (req: Request, res: Response
     expiresMinutes: EXPIRES_MINUTES,
   })
 
+  await record({
+    companyId: company.id,
+    userId: user.id,
+    kind: 'password.reset.requested',
+    subject: user.email,
+    ip: clientIp(req),
+    userAgent: userAgent(req),
+  })
+
   res.json(vague)
 })
 
@@ -163,13 +173,6 @@ router.post('/reset-password', resetLimiter, async (req: Request, res: Response)
     res.status(400).json({ error: 'token and newPassword are required' })
     return
   }
-  if (String(newPassword).length < MIN_PASSWORD_LENGTH) {
-    res.status(400).json({ error: `Password must be at least ${MIN_PASSWORD_LENGTH} characters` })
-    return
-  }
-
-  const hash = await bcrypt.hash(String(newPassword), BCRYPT_ROUNDS)
-
   const outcome = await transaction(async (client) => {
     // Claimed inside the transaction with FOR UPDATE, so the same link used
     // twice at once resets the password once.
@@ -178,23 +181,81 @@ router.post('/reset-password', resetLimiter, async (req: Request, res: Response)
          FROM password_reset_tokens WHERE token_hash = $1 FOR UPDATE`,
       [hashToken(String(token))],
     )
-    const record = rows[0]
-    if (!record || !record.valid) return { ok: false as const }
+    const claim = rows[0]
+    if (!claim || !claim.valid) return { ok: false as const }
 
-    await client.query('UPDATE password_reset_tokens SET used_at = NOW() WHERE id = $1', [record.id])
+    const { rows: who } = await client.query<{
+      id: string
+      name: string
+      email: string
+      company_id: string
+      company_name: string
+      slug: string
+    }>(
+      `SELECT u.id, u.name, u.email, u.company_id, c.name AS company_name, c.slug
+         FROM users u JOIN companies c ON c.id = u.company_id
+        WHERE u.id = $1`,
+      [claim.user_id],
+    )
+    const person = who[0]!
+
+    /*
+     * The policy check happens here, inside the claim.
+     *
+     * It needs the account's address and company code to reject a password
+     * built from either, and neither is known until the token resolves. A weak
+     * password therefore does not consume the link — the transaction rolls
+     * back and the user can try again with a better one, which is the
+     * behaviour you want when the alternative is "your reset link is now dead
+     * because you chose a short password".
+     */
+    const verdict = checkPassword(String(newPassword), [
+      person.email.split('@')[0] ?? '',
+      person.slug,
+    ])
+    if (!verdict.ok) return { ok: false as const, weak: verdict.reason! }
+
+    const hash = await bcrypt.hash(String(newPassword), BCRYPT_ROUNDS)
+    await client.query('UPDATE password_reset_tokens SET used_at = NOW() WHERE id = $1', [claim.id])
     await client.query(
       `UPDATE users
           SET password_hash = $2, password_changed_at = NOW(), token_version = token_version + 1
         WHERE id = $1`,
-      [record.user_id, hash],
+      [claim.user_id, hash],
     )
-    return { ok: true as const }
+    return { ok: true as const, person }
   })
 
   if (!outcome.ok) {
+    if ('weak' in outcome && outcome.weak) {
+      res.status(400).json({ error: outcome.weak })
+      return
+    }
     res.status(400).json({ error: 'That reset link has expired or been used already' })
     return
   }
+
+  await record({
+    companyId: outcome.person.company_id,
+    userId: outcome.person.id,
+    kind: 'password.reset.completed',
+    subject: outcome.person.email,
+    ip: clientIp(req),
+    userAgent: userAgent(req),
+  })
+
+  // The notice that matters most: if this reset was not theirs, this is how
+  // they find out an attacker has taken the account.
+  void email.sendSecurityNotice({
+    to: outcome.person.email,
+    name: outcome.person.name,
+    what: 'Your Stringline password was reset',
+    detail:
+      'Your password was reset using a link sent to this address, and every device has been signed out.',
+    companyName: outcome.person.company_name,
+    when: new Date(),
+    ip: clientIp(req) ?? undefined,
+  })
 
   res.json({ message: 'Password set. You can sign in now — other devices have been signed out.' })
 })

@@ -1,20 +1,21 @@
 /**
- * Transactional email, optional by design.
+ * Transactional email: what gets sent, and what it says.
  *
- * Ported from PropertyPlex's `services/email.js`, with two deliberate changes.
+ * *How* it leaves the building is `services/mailer.ts` — an ordinary mailbox
+ * over SMTP (a Gmail or iCloud account with an app password), Resend, or
+ * nothing at all. This module picks the words.
  *
- * It calls Resend's HTTP API with `fetch` rather than pulling in the `resend`
- * package — one POST to one endpoint is not worth a dependency, and Stringline
- * is meant to be easy to self-host.
- *
- * More importantly, **email being absent is a supported configuration, not a
- * broken one.** Without `RESEND_API_KEY` every send is logged and skipped, and
- * the features that cannot work without it hide themselves rather than
- * offering a button that fails. Owners can always reset a teammate's password
- * directly; only self-service "forgot password" genuinely needs mail. That
- * matters because the person installing this from GitHub has no Resend account,
- * and demanding one to add a second user would be the wrong default.
+ * **Email being absent is a supported configuration, not a broken one.** With
+ * nothing configured every send is logged and skipped, and the features that
+ * genuinely need mail hide themselves rather than offering a button that
+ * reports success and does nothing. Owners can always reset a teammate's
+ * password directly; only self-service "forgot password" truly requires it.
+ * That matters because the person installing this from GitHub has no mail
+ * provider, and demanding one before they can add a second person would be the
+ * wrong default.
  */
+
+import { provider, smtpConfig, transporter } from './mailer.js'
 
 const RESEND_ENDPOINT = 'https://api.resend.com/emails'
 
@@ -24,10 +25,12 @@ function apiKey(): string | undefined {
 
 /** Whether email can actually be sent. Routes branch on this. */
 export function isEnabled(): boolean {
-  return apiKey() !== undefined
+  return provider() !== 'none'
 }
 
 function fromAddress(): string {
+  const smtp = smtpConfig()
+  if (smtp) return smtp.from
   return process.env.RESEND_FROM_EMAIL?.trim() || 'onboarding@resend.dev'
 }
 
@@ -48,12 +51,91 @@ export async function send(options: {
   text: string
   fromName?: string
 }): Promise<SendResult> {
-  const key = apiKey()
-  if (!key) {
-    console.log(`[email] disabled — not sending "${options.subject}" to ${options.to}`)
-    return { sent: false, reason: 'Email is not configured on this server' }
+  switch (provider()) {
+    case 'smtp':
+      return sendOverSmtp(options)
+    case 'resend':
+      return sendOverResend(options)
+    default:
+      console.log(`[email] disabled — not sending "${options.subject}" to ${options.to}`)
+      return { sent: false, reason: 'Email is not configured on this server' }
   }
+}
 
+async function sendOverSmtp(options: {
+  to: string
+  subject: string
+  html: string
+  text: string
+  fromName?: string
+}): Promise<SendResult> {
+  try {
+    const info = await transporter()!.sendMail({
+      from: options.fromName ? { name: options.fromName, address: fromAddress() } : fromAddress(),
+      to: options.to,
+      subject: options.subject,
+      text: options.text,
+      html: options.html,
+    })
+
+    /*
+     * A 250 from the server is acceptance, not delivery — and nodemailer
+     * reports per-recipient rejections in the result rather than throwing.
+     * There is one recipient here, so anything in `rejected` means this went
+     * nowhere, and reporting it as sent would be a lie the user acts on.
+     */
+    if (info.rejected?.length) {
+      console.error(`[email] rejected by the server: ${info.rejected.join(', ')}`)
+      return { sent: false, reason: `The mail server rejected ${options.to}` }
+    }
+
+    console.log(`[email] sent "${options.subject}" to ${options.to} (${info.messageId})`)
+    return { sent: true }
+  } catch (error) {
+    const message = (error as Error).message
+    console.error('[email] SMTP send failed:', message)
+    return { sent: false, reason: smtpHint(message) }
+  }
+}
+
+/**
+ * Turn an SMTP failure into something actionable.
+ *
+ * The raw errors are notoriously unhelpful — "535 5.7.8 Username and Password
+ * not accepted" sends people off to change their Google password, which is not
+ * the problem and does not fix it.
+ */
+function smtpHint(message: string): string {
+  if (/535|5\.7\.8|auth|credential/i.test(message)) {
+    return 'The mail server rejected the credentials. SMTP_PASS must be an app password, not the account password.'
+  }
+  if (/ETIMEDOUT|ECONNREFUSED|timeout/i.test(message)) {
+    return 'Could not reach the mail server. Check SMTP_HOST and SMTP_PORT — 465 and 587 are not interchangeable.'
+  }
+  if (/self.signed|certificate|unable to verify/i.test(message)) {
+    return 'The mail server TLS certificate could not be verified.'
+  }
+  // What a stripped STARTTLS looks like from here: the upgrade was demanded,
+  // the server did not deliver one, and the TLS handshake ran into plaintext.
+  // Worth naming, because the raw OpenSSL text sends people to the wrong place
+  // entirely — and because the answer is never "turn off TLS checking".
+  if (/wrong version number|STARTTLS|does not support/i.test(message)) {
+    return 'The mail server would not start TLS. Mail was not sent, rather than sent in the clear — check SMTP_PORT (465 or 587).'
+  }
+  if (/limit|quota|rate/i.test(message)) {
+    return 'The mail provider is rate limiting this account. A personal mailbox has a daily send limit.'
+  }
+  return message
+}
+
+async function sendOverResend(options: {
+  to: string
+  subject: string
+  html: string
+  text: string
+  fromName?: string
+}): Promise<SendResult> {
+  const key = apiKey()!
   try {
     const from = options.fromName ? `${options.fromName} <${fromAddress()}>` : fromAddress()
     const response = await fetch(RESEND_ENDPOINT, {
@@ -208,10 +290,68 @@ export async function sendTemporaryPassword(options: {
   })
 }
 
+/**
+ * A security notice, to the person it happened to.
+ *
+ * Sent after the fact and never blocking: the password has already changed by
+ * the time this goes out, and a mail server having a bad minute must not turn
+ * a successful password change into an error the user sees.
+ *
+ * This is the control that catches an account takeover. Everything else is
+ * about stopping an attacker getting in; this is the one that tells somebody
+ * when one did.
+ */
+export async function sendSecurityNotice(options: {
+  to: string
+  name: string
+  what: string
+  detail: string
+  companyName: string
+  when: Date
+  ip?: string | undefined
+}): Promise<SendResult> {
+  const stamp = `${options.when.toISOString().replace('T', ' ').slice(0, 16)} UTC`
+  const where = options.ip ? `\nFrom: ${options.ip}` : ''
+  return send({
+    to: options.to,
+    fromName: `${options.companyName} via Stringline`,
+    subject: `Security: ${options.what}`,
+    text:
+      `Hi ${options.name},\n\n` +
+      `${options.detail}\n\n` +
+      `When: ${stamp}${where}\n\n` +
+      `If this was you, there is nothing to do. If it was not, tell an owner of ${options.companyName} ` +
+      `straight away — your password should be changed and your sessions ended.`,
+    html: layout(
+      options.what,
+      `<p>Hi ${esc(options.name)},</p>
+       <p>${esc(options.detail)}</p>
+       <table style="margin: 18px 0; font-size: 14px; color: #444;">
+         <tr><td style="padding: 2px 12px 2px 0; color: #777;">When</td><td>${esc(stamp)}</td></tr>
+         ${options.ip ? `<tr><td style="padding: 2px 12px 2px 0; color: #777;">From</td><td>${esc(options.ip)}</td></tr>` : ''}
+       </table>
+       <p style="color: #666; font-size: 14px;">If this was you, there is nothing to do. If it was not, tell an owner of
+       <strong>${esc(options.companyName)}</strong> straight away — your password should be changed and your sessions ended.</p>`,
+    ),
+  })
+}
+
 // Said once at boot, so the configuration is visible in the log rather than
 // discovered when a reset email never arrives.
+const bootConfig = (() => {
+  try {
+    return smtpConfig()
+  } catch (error) {
+    // A half-written configuration is a mistake worth shouting about, but not
+    // worth refusing to boot over — the app works without mail.
+    console.error(`[email] ${(error as Error).message}`)
+    return null
+  }
+})()
 console.log(
-  isEnabled()
-    ? '[email] Resend configured'
-    : '[email] RESEND_API_KEY not set — email disabled, owner-led password resets still work',
+  bootConfig
+    ? `[email] SMTP: ${bootConfig.user} via ${bootConfig.host}:${bootConfig.port}${bootConfig.secure ? ' (TLS)' : ' (STARTTLS)'}`
+    : isEnabled()
+      ? '[email] Resend configured'
+      : '[email] no mail configured — email disabled, owner-led password resets still work',
 )

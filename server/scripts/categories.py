@@ -175,7 +175,7 @@ else:
 
 print("\n== permissions and isolation ==")
 _, o = call("POST", "/team/invites", {"email": "hand@trade.test", "role": "field"}, owner)
-_, o = call("POST", f"/team/invites/{o['invite']['token']}/accept", {"password": "fieldpassword"})
+_, o = call("POST", f"/team/invites/{o['invite']['token']}/accept", {"password": "gravel-truck-9am"})
 field = o["token"]
 
 st, _ = call("POST", "/categories", {"name": "Sneaky"}, field)
