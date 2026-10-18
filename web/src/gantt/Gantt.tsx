@@ -224,6 +224,25 @@ export function Gantt({
   )
 
   const bands = useMemo(() => weekendBands(timeline), [timeline])
+
+  /*
+   * Where today falls on the scale, or null when it is off the chart.
+   *
+   * The ISO string comes from the local clock deliberately — "today" is a
+   * human's today, not UTC's. Everything downstream of it stays in the
+   * timeline's day-index space, so this is the only place a real clock is
+   * read.
+   */
+  const todayX = useMemo(() => {
+    const today = new Date()
+    const iso = [
+      today.getFullYear(),
+      String(today.getMonth() + 1).padStart(2, '0'),
+      String(today.getDate()).padStart(2, '0'),
+    ].join('-')
+    const x = timeline.x(iso)
+    return x >= 0 && x <= timeline.width ? x : null
+  }, [timeline])
   const arrows = useMemo(
     () => buildArrows(schedule, dependencies, rowOf, timeline),
     [schedule, dependencies, rowOf, timeline],
@@ -278,6 +297,67 @@ export function Gantt({
               className="weekend"
             />
           ))}
+
+          {/*
+            Row banding, behind everything.
+            Drawn here as full-width stripes rather than per row, because the
+            rows are virtualised: a band attached to a row would appear and
+            disappear as you scrolled, which is far more distracting than no
+            banding at all. Parity is taken from the absolute row index so a
+            stripe stays with its row.
+          */}
+          {Array.from({ length: lastRow - firstRow }, (_, i) => firstRow + i)
+            .filter((row) => row % 2 === 1)
+            .map((row) => (
+              <rect
+                key={`band-${row}`}
+                x={0}
+                y={row * ROW_HEIGHT}
+                width={timeline.width}
+                height={ROW_HEIGHT}
+                className="row-band"
+              />
+            ))}
+
+          {/*
+            Vertical rules at the major ticks — the weeks or months the axis
+            labels.
+            Without them a bar fourteen inches from the date column has nothing
+            to be read against, which is the single biggest legibility gap on a
+            wide chart. Snapped to a half-pixel: a 1px stroke on a whole
+            coordinate straddles two device pixels and renders as a soft 2px
+            smear, and a chart full of those is what "not high definition"
+            actually looks like.
+          */}
+          <g className="grid">
+            {timeline.ticks().filter((t) => t.major).map((tick) => (
+              <line
+                key={`grid-${tick.x}`}
+                x1={Math.round(tick.x) + 0.5}
+                y1={0}
+                x2={Math.round(tick.x) + 0.5}
+                y2={bodyHeight}
+                className="grid-line"
+              />
+            ))}
+          </g>
+
+          {/*
+            Today.
+            Not the same thing as the data date and must not look like it: the
+            data date is when the schedule was last brought current, today is
+            today. On a schedule nobody has updated for a month the gap between
+            those two lines is the most useful thing on the chart.
+          */}
+          {todayX !== null && (
+            <line
+              x1={Math.round(todayX) + 0.5}
+              y1={0}
+              x2={Math.round(todayX) + 0.5}
+              y2={bodyHeight}
+              className="today-line"
+            />
+          )}
 
           {/* The data date: everything left of it is fact, right of it forecast. */}
           {schedule.dataDate && (

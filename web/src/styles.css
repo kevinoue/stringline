@@ -1,36 +1,182 @@
 /*
  * Stringline — visual language.
  *
- * Two rules drive everything here:
- *   1. Critical is the only saturated colour on the chart. If everything is
- *      emphasised, nothing is, and the critical path is the one thing a
- *      foreman must be able to find in a glance.
+ * Three rules drive everything here:
+ *   1. Critical is the only saturated warm colour on the chart. If everything
+ *      is emphasised, nothing is, and the critical path is the one thing a
+ *      foreman must be able to find in a glance. This is why the accent used
+ *      for buttons and selection is *blue* — a second red would quietly
+ *      destroy the first one.
  *   2. The baseline ghost is quiet but always present. Slippage should be
  *      noticeable without being alarming, because most slippage is absorbed.
+ *   3. Depth comes from stacked surfaces, not from shadows. The app is a
+ *      drawing office, not a dashboard: a row, a card and a page differ by a
+ *      step of tone and a rule, which survives being photocopied, projected
+ *      onto a site wall, or looked at on a cracked phone in sunlight.
+ *
+ * ── Colour is addressed only through tokens ──────────────────────────────────
+ *
+ * Every colour on screen is a `var(--…)`. Nothing below this block may contain
+ * a literal hex value, because a literal is invisible to the dark theme — it
+ * keeps working in light, so the mistake only shows up for whoever flipped the
+ * switch. The themed overrides are the one place to look when something is the
+ * wrong colour.
+ *
+ * Print is the exception and stays hardcoded: paper is white under every
+ * theme, and a printout that changed colour with the viewer's OS setting would
+ * be a bug of a much more expensive kind.
  */
 
 :root {
-  --bg: #fbfbfa;
-  --panel: #ffffff;
-  --ink: #1c1e21;
-  --ink-soft: #5f6b76;
-  --line: #e3e6ea;
-  --line-strong: #c9cfd6;
+  color-scheme: light;
+
+  /* ── Surfaces, lightest to deepest ──────────────────────────────────────
+     Four steps, used consistently: --bg is the page, --surface is a panel or
+     card, --surface-2 is something inset into one (a link row, an attachment),
+     --surface-3 is a header strip or a well. */
+  --bg: #f4f5f7;
+  --surface: #ffffff;
+  --surface-2: #f3f5f7;
+  --surface-3: #e9edf1;
+  --hover: #eef2f6;
+  --selected: #e2ecf6;
+
+  /* Kept as an alias: `--panel` is used as an SVG paint in the chart, where
+     renaming it would be a silent change rather than a compile error. */
+  --panel: var(--surface);
+
+  --ink: #14171a;
+  --ink-soft: #55616c;
+  --ink-faint: #8b97a2;
+
+  --line: #dde3e9;
+  --line-strong: #bcc5cf;
+  --line-stronger: #97a2ad;
+
+  /* The one accent. Blue on purpose — see rule 1. */
+  --accent: #2f5a80;
+  --accent-hover: #244766;
+  --accent-ink: #ffffff;
+  --accent-soft: #e4eef7;
+  --accent-line: #a9c6de;
 
   --bar: #6b8aa8;
   --bar-critical: #c8442f;
   --bar-complete: #8a949e;
   --bar-progress: #43607a;
   --ghost: #b9c0c7;
-  --weekend: #f2f3f4;
+  --weekend: #eceff2;
+  --band: #fafbfc;
+  --grid: #e7ebef;
   --data-date: #d98324;
+  --today: #2f7d4f;
 
   --good: #2f7d4f;
   --bad: #c8442f;
+  --warn: #a8742a;
+
+  /* Semantic tints, each a surface + a border + readable text on it. Banners,
+     chips and the what-if bar all draw from these rather than inventing a
+     near-miss of the same colour. */
+  --bad-bg: #fcefec;
+  --bad-line: #efc3ba;
+  --bad-ink: #7d2417;
+  --good-bg: #eaf4ee;
+  --good-line: #bcdcc8;
+  --good-ink: #1e5a37;
+  --warn-bg: #fdf7ea;
+  --warn-line: #e6d3a9;
+  --warn-ink: #6b4d18;
+
+  --shadow-1: 0 1px 2px rgba(16, 24, 32, 0.06);
+  --shadow-2: 0 4px 14px rgba(16, 24, 32, 0.1);
+  --shadow-3: 0 14px 44px rgba(16, 24, 32, 0.22);
+  --scrim: rgba(18, 22, 27, 0.42);
+  /* Hairlines drawn *on* a colour — a swatch border, a bar outline — where a
+     grey from the palette would be wrong on half the colours it sits on. */
+  --edge: rgba(0, 0, 0, 0.14);
+  --focus: #2f5a80;
 
   --radius: 6px;
+  --radius-lg: 10px;
   --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   --mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, monospace;
+}
+
+/*
+ * Dark.
+ *
+ * Not an inversion. Three things are rebuilt rather than flipped:
+ *
+ *   * The bars are *lightened*, not darkened. On dark ground a dark bar is a
+ *     hole; the chart reads as marks on a surface, so the marks have to be the
+ *     brighter thing in both themes.
+ *   * The weekend band goes darker than the page while the row band goes
+ *     lighter. In light theme both are "quieter than white", which on dark
+ *     would make them both invisible.
+ *   * Text drops to #e6e9ec rather than pure white, and surfaces carry a trace
+ *     of blue. Pure white on pure black is what makes a dark theme tiring to
+ *     read a schedule on for an afternoon.
+ */
+:root[data-theme='dark'] {
+  color-scheme: dark;
+
+  --bg: #14181d;
+  --surface: #1b2027;
+  --surface-2: #222933;
+  --surface-3: #2a323d;
+  --hover: #273039;
+  --selected: #2a3d4f;
+
+  --ink: #e6e9ec;
+  --ink-soft: #9aa5b1;
+  --ink-faint: #6b7784;
+
+  --line: #2c343d;
+  --line-strong: #3d4752;
+  --line-stronger: #566270;
+
+  --accent: #5b92c4;
+  --accent-hover: #6ea3d4;
+  --accent-ink: #0d1116;
+  --accent-soft: #1e2b38;
+  --accent-line: #35546f;
+
+  --bar: #7fa3c2;
+  --bar-critical: #e2644a;
+  --bar-complete: #6e7883;
+  --bar-progress: #a8c6e0;
+  --ghost: #475059;
+  /* Only a step below the chart's own surface. At #11151a — a genuine step
+     towards black — the weekend bands stopped reading as quiet non-working
+     time and started reading as holes cut in the chart, which is the opposite
+     of what a background band is for. */
+  --weekend: #181d24;
+  --band: #1f262e;
+  --grid: #262e37;
+  --data-date: #e09a3e;
+  --today: #4caf7d;
+
+  --good: #5bbd87;
+  --bad: #e2644a;
+  --warn: #d2a052;
+
+  --bad-bg: #2e1c18;
+  --bad-line: #5a3228;
+  --bad-ink: #f0a797;
+  --good-bg: #16261d;
+  --good-line: #2b4a37;
+  --good-ink: #8fd4ab;
+  --warn-bg: #2a2317;
+  --warn-line: #4c3f23;
+  --warn-ink: #e0c288;
+
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-2: 0 4px 14px rgba(0, 0, 0, 0.45);
+  --shadow-3: 0 14px 44px rgba(0, 0, 0, 0.6);
+  --scrim: rgba(0, 0, 0, 0.6);
+  --edge: rgba(255, 255, 255, 0.16);
+  --focus: #7fb0dd;
 }
 
 * { box-sizing: border-box; }
@@ -43,26 +189,81 @@ body {
   font-size: 14px;
 }
 
+/*
+ * Three weights of button, and only three:
+ *
+ *   .primary  filled    — the one thing this screen is for. Never two.
+ *   (default) outlined  — a real action, available but not the point.
+ *   .ghost    bare      — navigation, toggles, dismissals.
+ *
+ * The outlined default sits on --surface-2 rather than --surface so it reads as
+ * a control on a panel instead of a rectangle of the same white as the panel.
+ * That was most of what made the app look blank.
+ */
 button {
   font: inherit;
   padding: 6px 12px;
   border: 1px solid var(--line-strong);
   border-radius: var(--radius);
-  background: var(--panel);
+  background: var(--surface-2);
+  color: var(--ink);
   cursor: pointer;
+  box-shadow: var(--shadow-1);
+  transition: background 90ms ease, border-color 90ms ease, color 90ms ease;
 }
-button:hover:not(:disabled) { border-color: var(--ink-soft); }
-button:disabled { opacity: 0.5; cursor: default; }
-button.ghost { border-color: transparent; background: transparent; color: var(--ink-soft); }
-button.active { background: var(--ink); color: #fff; border-color: var(--ink); }
+button:hover:not(:disabled) { background: var(--hover); border-color: var(--line-stronger); }
+button:active:not(:disabled) { background: var(--surface-3); }
+button:disabled { opacity: 0.45; cursor: default; box-shadow: none; }
 
-input {
+button.primary {
+  background: var(--accent); color: var(--accent-ink);
+  border-color: var(--accent); font-weight: 500;
+}
+button.primary:hover:not(:disabled) { background: var(--accent-hover); border-color: var(--accent-hover); }
+button.primary:active:not(:disabled) { background: var(--accent-hover); }
+
+button.ghost {
+  border-color: transparent; background: transparent;
+  color: var(--ink-soft); box-shadow: none;
+}
+button.ghost:hover:not(:disabled) { background: var(--surface-2); border-color: var(--line); color: var(--ink); }
+button.active { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+
+input, select, textarea {
   font: inherit;
   padding: 7px 10px;
   border: 1px solid var(--line-strong);
   border-radius: var(--radius);
-  background: var(--panel);
+  background: var(--surface);
+  color: var(--ink);
 }
+input:hover:not(:disabled), select:hover:not(:disabled) { border-color: var(--line-stronger); }
+input:disabled, select:disabled { background: var(--surface-3); color: var(--ink-faint); }
+input::placeholder { color: var(--ink-faint); }
+
+/*
+ * One focus ring, on everything, and only for keyboard focus.
+ *
+ * `:focus-visible` rather than `:focus` so clicking a button does not leave a
+ * ring behind it — which is the reason people remove focus styling altogether
+ * and then ship something unusable without a mouse.
+ */
+:where(button, input, select, textarea, a, [tabindex]):focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 1px;
+  border-color: var(--focus);
+}
+
+/* The theme switch. Deliberately the quietest thing in the toolbar: it is
+   a preference, not part of the work. */
+.theme-toggle {
+  flex: none; width: 30px; padding: 0;
+  font-size: 14px; line-height: 28px;
+  color: var(--ink-soft); background: transparent; border-color: transparent;
+  box-shadow: none;
+}
+.theme-toggle:hover:not(:disabled) { color: var(--ink); background: var(--surface-2); border-color: var(--line); }
+.auth-theme { position: fixed; top: 14px; right: 16px; }
 
 /*
  * The chart wants every pixel. The shell fills the viewport and only the split
@@ -82,13 +283,19 @@ input {
 .project > .whatif, .project > .new-task { flex: none; }
 .project > .legend { flex: none; }
 
+/* A tinted strip with a rule under it, rather than buttons floating on the
+   page. It is the one piece of furniture that is always there, so it should
+   read as furniture. */
 .toolbar {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding-bottom: 14px;
-  border-bottom: 1px solid var(--line);
-  margin-bottom: 14px;
+  padding: 10px 14px;
+  margin: -4px -4px 14px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-1);
 }
 .spacer { flex: 1; }
 .brand { font-size: 18px; margin: 0; letter-spacing: -0.01em; }
@@ -99,8 +306,8 @@ input {
 .finish strong { font-family: var(--mono); font-size: 15px; }
 
 .chip { font-size: 12px; padding: 2px 7px; border-radius: 10px; }
-.chip.good { background: #e6f2ea; color: var(--good); }
-.chip.bad { background: #fbe9e6; color: var(--bad); }
+.chip.good { background: var(--good-bg); color: var(--good); }
+.chip.bad { background: var(--bad-bg); color: var(--bad); }
 /* Neither good nor bad — a fact worth noticing. Used when the first day of
    work is later than the project anchor. */
 .chip.muted { background: var(--bg); color: var(--ink-soft); border: 1px solid var(--line); }
@@ -111,7 +318,8 @@ input {
 .auth-card {
   display: flex; flex-direction: column; gap: 12px;
   width: 320px; padding: 28px;
-  background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+  background: var(--surface); border: 1px solid var(--line);
+  border-radius: var(--radius-lg); box-shadow: var(--shadow-2);
 }
 .auth-card h1 { margin: 0; font-size: 24px; letter-spacing: -0.02em; }
 .tagline { margin: -8px 0 8px; color: var(--ink-soft); }
@@ -137,14 +345,16 @@ input {
 .project-card {
   width: 100%; display: flex; justify-content: space-between; align-items: center;
   padding: 14px 16px; text-align: left;
+  background: var(--surface); border-color: var(--line);
 }
+.project-card:hover:not(:disabled) { background: var(--surface-2); border-color: var(--line-stronger); }
 .project-card span { color: var(--ink-soft); font-family: var(--mono); font-size: 12px; }
 /* Quiet until you reach for it — deleting a project should take intent. */
 .project-delete {
   flex: none; width: 38px; font-size: 17px; line-height: 1;
   color: var(--ink-soft); border-color: var(--line);
 }
-.project-delete:hover:not(:disabled) { color: var(--bad); border-color: #e8c0b8; background: #fdf0ee; }
+.project-delete:hover:not(:disabled) { color: var(--bad); border-color: var(--bad-line); background: var(--bad-bg); }
 .project-rename {
   flex: none; width: 38px; font-size: 14px; line-height: 1;
   color: var(--ink-soft); border-color: var(--line);
@@ -170,14 +380,15 @@ input {
 
 .modal-backdrop {
   position: fixed; inset: 0; z-index: 50;
-  background: rgba(28, 30, 33, 0.35);
+  background: var(--scrim);
   display: grid; place-items: center;
 }
 .modal {
   display: flex; flex-direction: column; gap: 12px;
   width: 340px; padding: 20px;
-  background: var(--panel); border-radius: 10px;
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.18);
+  background: var(--surface); border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-3);
 }
 .modal-head { display: flex; align-items: center; justify-content: space-between; }
 .modal-head h2 { margin: 0; font-size: 16px; }
@@ -242,12 +453,14 @@ button.linkish:hover { color: var(--ink); background: none; }
   display: flex; align-items: center; gap: 10px;
   padding: 10px 14px; margin-bottom: 12px;
   border-radius: var(--radius); border: 1px solid;
+  border-left-width: 3px;
+  box-shadow: var(--shadow-1);
 }
 .impact-text { font-weight: 500; }
 .impact-hint { color: var(--ink-soft); font-size: 12px; }
-.impact-bad { background: #fdf0ee; border-color: #f0c4bc; color: #7d2417; }
-.impact-good { background: #eef6f1; border-color: #bcdcc8; color: #1e5a37; }
-.impact-neutral { background: #f4f5f6; border-color: var(--line-strong); }
+.impact-bad { background: var(--bad-bg); border-color: var(--bad-line); color: var(--bad-ink); }
+.impact-good { background: var(--good-bg); border-color: var(--good-line); color: var(--good-ink); }
+.impact-neutral { background: var(--surface-2); border-color: var(--line-strong); color: var(--ink); }
 .impact-close { margin-left: auto; border: none; background: none; font-size: 18px; line-height: 1; padding: 0 4px; }
 
 /* A refusal — "this move cannot happen, here is what is holding it". */
@@ -255,7 +468,9 @@ button.linkish:hover { color: var(--ink); background: none; }
   display: flex; align-items: center; gap: 10px;
   padding: 10px 14px; margin-bottom: 12px;
   border-radius: var(--radius);
-  background: #fffaf0; border: 1px solid #e8d3a8; color: #6b4d18;
+  background: var(--warn-bg); border: 1px solid var(--warn-line);
+  border-left-width: 3px; color: var(--warn-ink);
+  box-shadow: var(--shadow-1);
 }
 .notice-text { font-weight: 500; }
 
@@ -265,21 +480,28 @@ button.linkish:hover { color: var(--ink); background: none; }
   border: 1px solid var(--line);
   border-left: 3px solid var(--line-strong);
   border-radius: var(--radius);
-  background: var(--panel);
+  background: var(--surface);
+  box-shadow: var(--shadow-1);
   margin-bottom: 14px;
+  overflow: hidden;
 }
 .summary.health-at-risk { border-left-color: var(--bad); }
-.summary.health-behind-baseline { border-left-color: #d98324; }
+.summary.health-behind-baseline { border-left-color: var(--data-date); }
 .summary.health-on-track, .summary.health-ahead { border-left-color: var(--good); }
 
 .summary header {
   display: flex; align-items: center; gap: 10px;
   padding: 11px 14px; cursor: pointer; user-select: none;
+  background: var(--surface-3);
+  border-radius: calc(var(--radius) - 1px) calc(var(--radius) - 1px) 0 0;
 }
+.summary header:hover { background: var(--hover); }
+/* Collapsed, the header *is* the card, so it keeps all four corners. */
+.summary:not(:has(.summary-body)) header { border-radius: inherit; }
 .summary h2 { margin: 0; font-size: 15px; font-weight: 600; letter-spacing: -0.01em; }
 .health-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; background: var(--line-strong); }
 .health-dot.health-at-risk { background: var(--bad); }
-.health-dot.health-behind-baseline { background: #d98324; }
+.health-dot.health-behind-baseline { background: var(--data-date); }
 .health-dot.health-on-track, .health-dot.health-ahead { background: var(--good); }
 .health-label {
   margin-left: auto; font-size: 11px; text-transform: uppercase;
@@ -313,14 +535,16 @@ button.linkish:hover { color: var(--ink); background: none; }
 .whatif {
   display: flex; align-items: center; gap: 16px;
   padding: 12px 14px; margin-bottom: 12px;
-  background: #fffaf0; border: 1px solid #e8d3a8; border-radius: var(--radius);
+  background: var(--warn-bg); border: 1px solid var(--warn-line);
+  border-left-width: 3px; border-radius: var(--radius);
+  box-shadow: var(--shadow-1);
 }
 .whatif-actions { margin-left: auto; display: flex; gap: 8px; }
 .whatif-outcome.bad { color: var(--bad); font-weight: 500; }
 .whatif-outcome.neutral { color: var(--good); font-weight: 500; }
 .whatif-detail { margin-top: 5px; font-size: 12px; color: var(--ink-soft); }
 .whatif-warning {
-  margin-top: 5px; font-size: 12px; color: #7d5417;
+  margin-top: 5px; font-size: 12px; color: var(--warn-ink);
   padding-left: 14px; position: relative;
 }
 .whatif-warning::before { content: '!'; position: absolute; left: 3px; font-weight: 700; }
@@ -331,10 +555,11 @@ button.linkish:hover { color: var(--ink); background: none; }
 
 .split {
   display: flex;
-  border: 1px solid var(--line);
-  border-radius: 8px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-lg);
   overflow: hidden;
-  background: var(--panel);
+  background: var(--surface);
+  box-shadow: var(--shadow-2);
 }
 
 /*
@@ -353,9 +578,13 @@ button.linkish:hover { color: var(--ink); background: none; }
   gap: 7px;
   padding: 0 9px;
 }
+/* A header, not a first row: tinted, with a hard rule beneath it, so a long
+   list still has something anchoring the top when it is scrolled. */
 .table-header {
   font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em;
-  color: var(--ink-soft); border-bottom: 1px solid var(--line);
+  color: var(--ink-soft); background: var(--surface-3);
+  border-bottom: 1px solid var(--line-strong);
+  min-height: 30px;
 }
 /* Folded away, the dates stop occupying a column at all. */
 .table[data-compact='true'] .table-header,
@@ -371,8 +600,15 @@ button.linkish:hover { color: var(--ink); background: none; }
 /* The two panes scroll as one; hiding this scrollbar keeps them visually locked. */
 .table-body::-webkit-scrollbar { width: 0; }
 .table-row { border-bottom: 1px solid var(--line); cursor: pointer; }
-.table-row:hover { background: #f7f8f9; }
-.table-row.selected { background: #eef3f8; }
+/* Banding, because the eye has to carry a row across to a bar that may be a
+   foot away on a wide screen. Faint enough that hover and selection still
+   read on top of it. */
+.table-row:nth-of-type(even) { background: var(--band); }
+.table-row:hover, .table-row:nth-of-type(even):hover { background: var(--hover); }
+.table-row.selected, .table-row.selected:nth-of-type(even) {
+  background: var(--selected);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
 .table-row.critical .col-name { font-weight: 600; }
 
 .col-name { display: flex; align-items: center; gap: 6px; min-width: 0; }
@@ -386,27 +622,74 @@ button.linkish:hover { color: var(--ink); background: none; }
   width: 8px; height: 8px; background: var(--ink); transform: rotate(45deg); flex: none;
 }
 .pill { font-size: 10px; padding: 1px 6px; border-radius: 8px; text-transform: uppercase; letter-spacing: 0.04em; }
-.pill.done { background: #eceff1; color: var(--ink-soft); }
-.pill.wip { background: #e8eef4; color: var(--bar-progress); }
+.pill.done { background: var(--surface-3); color: var(--ink-soft); }
+.pill.wip { background: var(--accent-soft); color: var(--bar-progress); }
 .var { font-family: var(--mono); font-size: 11px; margin-left: 5px; }
 .var.late { color: var(--bad); }
 .var.early { color: var(--good); }
 
 /* ── Gantt ────────────────────────────────────────────────────────────────── */
 
-.gantt { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+/*
+ * A floor under the chart.
+ *
+ * `min-width: 0` alone let it collapse to whatever the table and the editor
+ * left over, which on a narrow window was a few slivers. 300px is about four
+ * weeks at the default scale — the point below which the chart stops being
+ * worth drawing and the panel should yield instead.
+ */
+/* `1 1 0` — basis zero, not `auto`. The chart's content is the whole
+   timeline, which is routinely 3000px wide and scrolls; with `flex-basis:
+   auto` that becomes its hypothetical size, the row "overflows" by a mile,
+   and every pane including the editor collapses to its minimum. */
+.gantt { flex: 1 1 0; min-width: 300px; display: flex; flex-direction: column; }
 .gantt-header { overflow: hidden; border-bottom: 1px solid var(--line); }
 .gantt-scroll { overflow: auto; }
 
-.tick-major { stroke: var(--line-strong); stroke-width: 1; }
+/*
+ * Hairlines are drawn with `crispEdges` so a 1px rule stays 1px.
+ *
+ * The default (`geometricPrecision`) antialiases a vertical line across two
+ * device pixels whenever its coordinate is not exactly on the grid, and the
+ * timeline's scale is a continuous pixels-per-day float, so most of them are
+ * not. The result is a chart of soft grey smears that looks low-resolution
+ * however good the display is. Fills are left alone — a bar's edge *should*
+ * antialias, or every bar's width rounds to the nearest pixel and the
+ * durations stop being proportional.
+ */
+.tick-major, .tick-minor, .grid-line, .float-line { shape-rendering: crispEdges; }
+
+.tick-major { stroke: var(--line-stronger); stroke-width: 1; }
 .tick-minor { stroke: var(--line); stroke-width: 1; }
 .tick-label { font-size: 10px; fill: var(--ink-soft); }
 .tick-label-major { font-size: 10px; fill: var(--ink); font-weight: 600; }
 
+.gantt-header { background: var(--surface-3); }
+
+/* Vertical rules at the labelled ticks, and horizontal banding behind the
+   rows. Both are reference, so both sit under everything and stay faint. */
+.grid-line { stroke: var(--grid); stroke-width: 1; }
+.row-band { fill: var(--band); }
+
+/* Today, against the data date beside it. Green, dashed, and thinner than the
+   data date's amber — two lines of the same weight read as a pair of equals,
+   and they are not: the data date is a statement about the schedule, today is
+   just today. */
+.today-line {
+  stroke: var(--today); stroke-width: 1.5; stroke-dasharray: 2 4;
+  opacity: 0.8; shape-rendering: crispEdges;
+}
+
 .row-bg { fill: transparent; }
-.row:hover .row-bg { fill: #f7f8f9; }
+.row-bg.band { fill: var(--band); }
+.row:hover .row-bg { fill: var(--hover); }
 .weekend { fill: var(--weekend); }
 .data-date { stroke: var(--data-date); stroke-width: 2; stroke-dasharray: 4 3; }
+
+/* A hairline inside the fill, in the fill's own colour darkened by the edge
+   token. Two adjacent bars of the same grey — a complete task and the one
+   after it — otherwise merge into one long bar. */
+.bar, .milestone, .step-bar, .ghost { stroke: var(--edge); stroke-width: 0.5; }
 
 .bar { fill: var(--bar); }
 .bar.critical { fill: var(--bar-critical); }
@@ -420,7 +703,7 @@ button.linkish:hover { color: var(--ink); background: none; }
 
 /* Invisible but hittable resize zones at each end of a bar. */
 .handle { fill: transparent; }
-.row:hover .handle { fill: rgba(255, 255, 255, 0.35); }
+.row:hover .handle { fill: var(--edge); }
 
 /*
  * Dragging past what the dependencies allow. The forbidden region is shaded and
@@ -439,7 +722,7 @@ button.linkish:hover { color: var(--ink); background: none; }
   stroke-width: 3px;
   stroke-linejoin: round;
 }
-.bar-label.critical { fill: #8d3123; }
+.bar-label.critical { fill: var(--bad-ink); }
 .bar.blocked, .milestone.blocked { fill: var(--bad); opacity: 0.45; }
 
 /* Baseline ghost: present but never competing with the live bar. */
@@ -452,21 +735,67 @@ button.linkish:hover { color: var(--ink); background: none; }
 
 /* ── Task editor panel ────────────────────────────────────────────────────── */
 
+/*
+ * The task editor.
+ *
+ * Width is `--panel-w`, set by the drag handle and remembered, clamped so it
+ * can neither be squeezed to uselessness nor eat the chart. 320px fixed was
+ * too narrow for a predecessor dropdown holding real task names, and a plain
+ * percentage would be 240px on a laptop and 600px on a 32-inch monitor.
+ *
+ * `min-width: 0` on the panel and on everything inside it is load-bearing:
+ * a flex or grid child defaults to `min-width: auto`, which for a <select>
+ * means "never narrower than my longest option". That is what pushed the Link
+ * button off the edge and made the column scroll sideways.
+ */
+/*
+ * `0 1` — it may not grow, but it *must* be able to shrink.
+ *
+ * With `flex: 0 0` the panel held its full width no matter what, and on a
+ * laptop with the date columns showing and the panel dragged wide, the chart
+ * was squeezed to under 300px: a Gantt chart with no room for bars. The chart
+ * is the product, so when the row runs out of width the editor is what gives.
+ */
 .panel {
-  flex: 0 0 320px;
+  flex: 0 1 clamp(300px, var(--panel-w, 24vw), 34vw);
+  min-width: 280px;
+  position: relative;
   border-left: 1px solid var(--line-strong);
   display: flex;
   flex-direction: column;
   overflow-y: auto;
-  background: var(--panel);
+  overflow-x: hidden;
+  background: var(--surface);
 }
+.panel * { min-width: 0; }
+
+/* The grab strip. Four pixels wide, sitting over the panel's left border, and
+   lit only on hover — a resize handle that is always visible is noise, and one
+   that is invisible until you find it is worse. */
+.panel-grip {
+  position: absolute; top: 0; left: -3px; bottom: 0; width: 6px;
+  cursor: col-resize; z-index: 2;
+  background: transparent;
+  border: 0; padding: 0; box-shadow: none;
+  touch-action: none;
+}
+.panel-grip:hover, .panel-grip.dragging { background: var(--accent); opacity: 0.55; }
+/* While dragging, stop the pointer selecting text across the whole app — a
+   resize that highlights half the task list on the way looks broken. */
+body.resizing { user-select: none; cursor: col-resize; }
 .panel-head {
   display: flex; align-items: center; justify-content: space-between;
-  padding: 10px 14px; border-bottom: 1px solid var(--line);
-  position: sticky; top: 0; background: var(--panel); z-index: 1;
+  padding: 10px 14px; border-bottom: 1px solid var(--line-strong);
+  position: sticky; top: 0; background: var(--surface-3); z-index: 1;
 }
 .panel-head h2 { margin: 0; font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--ink-soft); }
 .panel-body { padding: 14px; display: flex; flex-direction: column; gap: 10px; border-bottom: 1px solid var(--line); }
+/* Section headings sit on a tinted strip so the panel reads as four stacked
+   sections rather than one long form. */
+.panel-body > h3:first-child {
+  margin: -14px -14px 4px; padding: 7px 14px;
+  background: var(--surface-2); border-bottom: 1px solid var(--line);
+}
 .panel-body h3 { margin: 0; font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--ink-soft); }
 .panel label { display: flex; flex-direction: column; gap: 4px; font-size: 11px; color: var(--ink-soft); }
 .panel input, .panel select { font-size: 13px; }
@@ -475,18 +804,50 @@ button.linkish:hover { color: var(--ink); background: none; }
 .actuals { border: 1px solid var(--line); border-radius: var(--radius); padding: 10px; display: flex; flex-direction: column; gap: 8px; margin: 0; }
 .actuals legend { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--ink-soft); padding: 0 4px; }
 
-.panel-actions { display: flex; gap: 8px; }
-.panel-actions button { flex: 1; }
-button.danger { color: var(--bad); border-color: #e8c0b8; }
-button.danger:hover:not(:disabled) { background: #fdf0ee; }
+/* Save is the primary and gets the room; the other two are equals beside it.
+   Wrapping rather than shrinking, so a narrow panel gives Delete its own line
+   instead of three buttons reading "Sav…" "Dup…" "Del…". */
+.panel-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.panel-actions button { flex: 1 1 auto; white-space: nowrap; }
+.panel-actions button.primary { flex: 2 1 120px; }
+button.danger { color: var(--bad); border-color: var(--bad-line); }
+button.danger:hover:not(:disabled) { background: var(--bad-bg); border-color: var(--bad); }
 
 .links { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
-.links li { display: flex; align-items: center; justify-content: space-between; gap: 6px; font-size: 12px; padding: 4px 6px; background: #f7f8f9; border-radius: 4px; }
+.links li {
+  display: flex; align-items: center; justify-content: space-between; gap: 6px;
+  font-size: 12px; padding: 5px 7px; min-width: 0;
+  background: var(--surface-2); border: 1px solid var(--line); border-radius: 4px;
+}
+/* A predecessor's name can be longer than the panel is wide; it ellipsises
+   rather than widening the panel's content and bringing back the sideways
+   scroll this section exists to remove. */
+.links li > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .links em { font-style: normal; font-family: var(--mono); font-size: 10px; color: var(--ink-soft); }
-.add-link { display: grid; grid-template-columns: 1fr 58px 52px auto; gap: 5px; align-items: center; }
+/*
+ * Two rows, not four columns.
+ *
+ * The task names in the dropdown are as long as tasks are named, so any layout
+ * that puts the select beside the Link button is one long name away from
+ * overflowing. The select gets the full width on its own line; the type, the
+ * lag and the button sit under it, which is also the reading order — *what* it
+ * waits on, then *how*.
+ */
+.add-link { display: grid; grid-template-columns: 1fr; gap: 6px; }
+.add-link .add-link-what { width: 100%; min-width: 0; }
+.add-link .add-link-how {
+  display: grid; grid-template-columns: auto auto 1fr; gap: 6px; align-items: center;
+}
 .add-link select, .add-link input { font-size: 12px; padding: 5px 6px; }
+.add-link .add-link-how select { width: auto; }
+.add-link .add-link-how input { width: 100%; max-width: 64px; }
+.add-link .add-link-how label {
+  display: flex; flex-direction: row; align-items: center; gap: 5px;
+  font-size: 11px; color: var(--ink-soft); white-space: nowrap;
+}
+.add-link .add-link-how > button { justify-self: end; }
 
-.panel-foot { padding: 12px 14px; }
+.panel-foot { padding: 12px 14px; background: var(--surface-2); border-top: 1px solid var(--line); }
 .panel-foot dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 4px 10px; font-size: 12px; }
 .panel-foot dt { color: var(--ink-soft); }
 .panel-foot dd { margin: 0; font-family: var(--mono); }
@@ -503,8 +864,9 @@ button.danger:hover:not(:disabled) { background: #fdf0ee; }
 
 .attach-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 3px; }
 .attach-list li {
-  display: grid; grid-template-columns: 1fr auto auto; gap: 6px; align-items: center;
-  font-size: 12px; padding: 4px 6px; background: #f7f8f9; border-radius: 4px;
+  display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 6px; align-items: center;
+  font-size: 12px; padding: 5px 7px;
+  background: var(--surface-2); border: 1px solid var(--line); border-radius: 4px;
 }
 .attach-list a { display: flex; align-items: center; gap: 6px; min-width: 0; color: var(--ink); text-decoration: none; }
 .attach-list a:hover .attach-name { text-decoration: underline; }
@@ -533,7 +895,7 @@ button.danger:hover:not(:disabled) { background: #fdf0ee; }
 .source-link { color: var(--ink-soft); font-size: 11px; }
 .source-note { margin: 4px 0 0; font-size: 11px; color: var(--ink-soft); line-height: 1.5; }
 .source-note a { color: var(--ink-soft); }
-.selection.warn { font-family: var(--font); color: #7d5417; max-width: 60%; text-align: right; }
+.selection.warn { font-family: var(--font); color: var(--warn-ink); max-width: 60%; text-align: right; }
 
 /* ── Print ──────────────────────────────────────────────────────────────────
  *
@@ -575,10 +937,45 @@ button.danger:hover:not(:disabled) { background: #fdf0ee; }
     print-color-adjust: exact !important;
   }
 
+  /*
+   * Paper is paper, whatever the screen is set to.
+   *
+   * This is not belt-and-braces: with a dark theme active, `body` carries
+   * `color: var(--ink)` — near-white — and several print rules set only size
+   * and spacing, inheriting their colour. Printing from dark mode put white
+   * text on white paper, and the sheet came out of the printer blank in
+   * patches with no error anywhere. Re-pointing the tokens at their light
+   * values inside the print block fixes the whole class of that bug rather
+   * than the instances of it, including any rule added later.
+   */
+  :root {
+    color-scheme: light;
+    --bg: #ffffff;
+    --surface: #ffffff;
+    --surface-2: #fafafa;
+    --surface-3: #f2f2f2;
+    --hover: #ffffff;
+    --selected: #ffffff;
+    --ink: #111111;
+    --ink-soft: #555555;
+    --ink-faint: #888888;
+    --line: #dddddd;
+    --line-strong: #bbbbbb;
+    --line-stronger: #999999;
+    --band: #fafafa;
+    --grid: #d8d8d8;
+    --edge: rgba(0, 0, 0, 0.2);
+  }
+
   html, body {
-    margin: 0; padding: 0; background: #fff;
+    margin: 0; padding: 0; background: #fff; color: #111;
     font-family: ui-sans-serif, -apple-system, "Segoe UI", sans-serif;
   }
+
+  /* The printed tree, explicitly. `color` on <body> is inherited by the
+     portalled layout, but a stacking or containment change upstream should not
+     be able to quietly take the ink with it. */
+  body > .print-only { color: #111; background: #fff; }
 
   .print-page {
     position: relative;
@@ -672,10 +1069,23 @@ button.danger:hover:not(:disabled) { background: #fdf0ee; }
   .print-weekend { fill: #f4f4f4; }
   .print-row-band { fill: #fafafa; }
 
+  /* Light enough to sit under the bars, dark enough to survive a photocopier
+     and a fax, which is still how a schedule reaches some site offices. */
+  .print-grid-line { stroke: #d8d8d8; stroke-width: 0.5; }
+
+  /* A hairline around every bar.
+     Printed, the greys separating a complete task from a planned one are much
+     closer together than they are on screen — toner is not a monitor — and two
+     adjacent bars merge into one. The outline costs nothing and makes each bar
+     a distinct object even at 50% on a copier. */
+  .print-bar, .print-milestone, .print-step-bar, .print-ghost {
+    stroke: #4a4a4a; stroke-width: 0.4;
+  }
+
   .print-bar { fill: #7d8894; }
   .print-bar.critical { fill: #c0392b; }
   .print-bar.complete { fill: #9aa3ab; }
-  .print-ghost { fill: #c9cdd2; }
+  .print-ghost { fill: #c9cdd2; stroke: #9a9a9a; }
   .print-milestone { fill: #2c3038; }
   .print-milestone.critical { fill: #c0392b; }
 
@@ -896,7 +1306,7 @@ button.danger:hover:not(:disabled) { background: #fdf0ee; }
 .swatches { display: grid; grid-template-columns: repeat(5, 1fr); gap: 3px; width: 112px; }
 .swatch-btn {
   width: 20px; height: 14px; padding: 0;
-  border: 1px solid rgba(0, 0, 0, 0.12); border-radius: 3px; cursor: pointer;
+  border: 1px solid var(--edge); border-radius: 3px; cursor: pointer;
 }
 .swatch-btn:hover:not(:disabled) { outline: 1px solid var(--ink-soft); outline-offset: 1px; }
 /* A ring rather than a tick: a tick would need a contrasting colour that works
@@ -968,9 +1378,19 @@ button.danger:hover:not(:disabled) { background: #fdf0ee; }
 .step-actions button { padding: 1px 4px; font-size: 11px; }
 .step-days { min-width: 34px; text-align: right; }
 
-.step-add { display: flex; gap: 4px; }
-.step-add input[type='text'], .step-add input:not([type]) { flex: 1; min-width: 0; }
-.step-add input[type='number'] { width: 58px; flex: none; }
+/* Same shape as the predecessor form, and for the same reason: the name wants
+   the whole width, and "Add" must never be the thing that falls off. */
+.step-add { display: grid; grid-template-columns: 1fr; gap: 6px; }
+.step-add input[type='text'], .step-add input:not([type]) { width: 100%; min-width: 0; }
+.step-add .step-add-how {
+  display: grid; grid-template-columns: auto 1fr; gap: 6px; align-items: center;
+}
+.step-add .step-add-how label {
+  display: flex; flex-direction: row; align-items: center; gap: 5px;
+  font-size: 11px; color: var(--ink-soft); white-space: nowrap;
+}
+.step-add input[type='number'] { width: 64px; }
+.step-add .step-add-how > button { justify-self: end; }
 
 /* The selected trade's colour, beside the dropdown that sets it. The picker
    itself lives behind a toolbar button, which is easy to miss — this is the
@@ -978,7 +1398,7 @@ button.danger:hover:not(:disabled) { background: #fdf0ee; }
 .trade-dot {
   display: inline-block; width: 9px; height: 9px; margin-right: 5px;
   border-radius: 2px; vertical-align: baseline;
-  border: 1px solid rgba(0, 0, 0, 0.15);
+  border: 1px solid var(--edge);
 }
 
 /* Colour chooser on the add form. The list above may be empty — which is
@@ -997,4 +1417,4 @@ button.danger:hover:not(:disabled) { background: #fdf0ee; }
 /* Print mode switch — chart or checklists. */
 .print-mode { display: flex; gap: 4px; }
 .print-mode button { flex: 1; font-size: 13px; }
-.print-mode button.active { background: var(--ink); color: #fff; border-color: var(--ink); }
+.print-mode button.active { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }

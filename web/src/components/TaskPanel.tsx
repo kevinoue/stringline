@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Attachments } from './Attachments.js'
 import { Steps } from './Steps.js'
 import { PALETTE } from '../gantt/palette.js'
@@ -155,6 +155,7 @@ export function TaskPanel({
 
   return (
     <aside className="panel">
+      <PanelGrip />
       <header className="panel-head">
         <h2>Edit task</h2>
         <button className="ghost" onClick={onClose} aria-label="Close">
@@ -316,15 +317,17 @@ export function TaskPanel({
         </fieldset>
 
         <div className="panel-actions">
-          <button type="submit" disabled={busy}>
+          <button type="submit" className="primary" disabled={busy}>
             Save changes
           </button>
           {/* Copies the steps and predecessors, not the successors or any
               recorded actuals. The main use is splitting one task that a
               template lumped together — a copy to edit beats an empty task. */}
+          {/* Outlined, not ghost. Ghost is for navigation and dismissal;
+              this one creates a task. Bare, it read as a label sitting
+              between two buttons. */}
           <button
             type="button"
-            className="ghost"
             onClick={onDuplicate}
             disabled={busy}
             title="Copy this task, its steps and what it waits on"
@@ -362,8 +365,22 @@ export function TaskPanel({
           })}
         </ul>
 
+        {/*
+          Two rows: what it waits on, then how.
+
+          The dropdown holds real task names — "Winterize the Summer House
+          plumbing" — so on one line beside the Link button it could not shrink
+          (a grid child's minimum is its content) and pushed Link off the edge,
+          leaving the whole panel scrolling sideways to reach the thing that
+          commits the change. Full width on its own line, controls underneath.
+        */}
         <div className="add-link">
-          <select value={newPred} onChange={(e) => setNewPred(e.target.value)}>
+          <select
+            className="add-link-what"
+            value={newPred}
+            onChange={(e) => setNewPred(e.target.value)}
+            aria-label="Predecessor"
+          >
             <option value="">Add a predecessor…</option>
             {candidates.map((t) => (
               <option key={t.id} value={t.id}>
@@ -371,30 +388,42 @@ export function TaskPanel({
               </option>
             ))}
           </select>
-          <select value={newType} onChange={(e) => setNewType(e.target.value)}>
-            {['FS', 'SS', 'FF', 'SF'].map((t) => (
-              <option key={t} value={t}>
-                {t}
-              </option>
-            ))}
-          </select>
-          <input
-            type="number"
-            value={newLag}
-            onChange={(e) => setNewLag(e.target.value)}
-            title="Lag in working days; negative overlaps"
-          />
-          <button
-            type="button"
-            disabled={!newPred || busy}
-            onClick={() => {
-              onAddDependency(newPred, newType, Number(newLag) || 0)
-              setNewPred('')
-              setNewLag('0')
-            }}
-          >
-            Link
-          </button>
+          <div className="add-link-how">
+            <select
+              value={newType}
+              onChange={(e) => setNewType(e.target.value)}
+              aria-label="Link type"
+              title="Finish-to-start, start-to-start, finish-to-finish, start-to-finish"
+            >
+              {['FS', 'SS', 'FF', 'SF'].map((t) => (
+                <option key={t} value={t}>
+                  {t}
+                </option>
+              ))}
+            </select>
+            {/* Labelled now there is room for it. "58px of number box" next to
+                a dropdown of initialisms was unguessable. */}
+            <label>
+              Lag
+              <input
+                type="number"
+                value={newLag}
+                onChange={(e) => setNewLag(e.target.value)}
+                title="Lag in working days; negative overlaps"
+              />
+            </label>
+            <button
+              type="button"
+              disabled={!newPred || busy}
+              onClick={() => {
+                onAddDependency(newPred, newType, Number(newLag) || 0)
+                setNewPred('')
+                setNewLag('0')
+              }}
+            >
+              Link
+            </button>
+          </div>
         </div>
       </section>
 
@@ -428,3 +457,65 @@ export function TaskPanel({
     </aside>
   )
 }
+
+/**
+ * Drag the panel's edge to resize it.
+ *
+ * Writes `--panel-w` on `<html>` rather than lifting the width into React
+ * state: a pointermove handler that re-renders the editor — and through it the
+ * chart beside it — drops frames on a 200-task project, and the width is
+ * presentation rather than data. The CSS clamps it, so a wild drag cannot
+ * leave the panel 3px wide or swallow the chart.
+ *
+ * Double-click resets, because a resize with no way back is a trap.
+ */
+function PanelGrip() {
+  const dragging = useRef(false)
+
+  useEffect(() => {
+    // Restore whatever it was last set to. Done here rather than at startup so
+    // a session that never opens the editor never touches the variable.
+    const saved = localStorage.getItem(PANEL_WIDTH_KEY)
+    if (saved) document.documentElement.style.setProperty('--panel-w', saved)
+  }, [])
+
+  const begin = (event: React.PointerEvent) => {
+    event.preventDefault()
+    dragging.current = true
+    document.body.classList.add('resizing')
+
+    const move = (e: PointerEvent) => {
+      if (!dragging.current) return
+      // Measured from the right edge of the window, which is where the panel
+      // is anchored. Using a delta from the grab point instead drifts as soon
+      // as the clamp bites.
+      const width = Math.round(window.innerWidth - e.clientX)
+      document.documentElement.style.setProperty('--panel-w', `${width}px`)
+    }
+    const end = () => {
+      dragging.current = false
+      document.body.classList.remove('resizing')
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', end)
+      const now = document.documentElement.style.getPropertyValue('--panel-w')
+      if (now) localStorage.setItem(PANEL_WIDTH_KEY, now)
+    }
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', end)
+  }
+
+  return (
+    <button
+      className="panel-grip"
+      aria-label="Resize the editor"
+      title="Drag to resize · double-click to reset"
+      onPointerDown={begin}
+      onDoubleClick={() => {
+        document.documentElement.style.removeProperty('--panel-w')
+        localStorage.removeItem(PANEL_WIDTH_KEY)
+      }}
+    />
+  )
+}
+
+const PANEL_WIDTH_KEY = 'stringline.panelWidth'

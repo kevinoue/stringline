@@ -18,6 +18,7 @@ import { SummaryPanel } from './components/SummaryPanel.js'
 import { Categories } from './components/Categories.js'
 import { Phases } from './components/Phases.js'
 import { PrintDialog } from './print/PrintDialog.js'
+import { ThemeToggle } from './components/ThemeToggle.js'
 import { TaskPanel } from './components/TaskPanel.js'
 import { TaskTable } from './components/TaskTable.js'
 import { Gantt, type DragResult } from './gantt/Gantt.js'
@@ -511,6 +512,7 @@ export function ProjectView({ projectId, onBack }: { projectId: string; onBack()
         <button className="ghost" onClick={() => setPrinting(true)}>
           Print
         </button>
+        <ThemeToggle />
         <div className="zooms">
           <button
             onClick={() => setDayWidth((w) => clampDayWidth(w / 1.4))}

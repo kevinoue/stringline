@@ -160,24 +160,32 @@ export function Steps({
         </ul>
       )}
 
+      {/* Same two-row shape as the predecessor form, for the same reason: the
+          name field wants the full width, and "Add" must never be the control
+          that falls off the edge. */}
       {canEdit && (
         <form className="step-add" onSubmit={add}>
           <input
             placeholder="e.g. Blow out the lines"
             value={name}
             onChange={(e) => setName(e.target.value)}
+            aria-label="Step name"
           />
-          <input
-            type="number"
-            min={0}
-            value={days}
-            onChange={(e) => setDays(e.target.value)}
-            title="Working days. Zero makes it a tick-box."
-            aria-label="Days"
-          />
-          <button type="submit" disabled={busy || !name.trim()}>
-            Add
-          </button>
+          <div className="step-add-how">
+            <label>
+              Days
+              <input
+                type="number"
+                min={0}
+                value={days}
+                onChange={(e) => setDays(e.target.value)}
+                title="Working days. Zero makes it a tick-box."
+              />
+            </label>
+            <button type="submit" disabled={busy || !name.trim()}>
+              Add
+            </button>
+          </div>
         </form>
       )}
     </div>

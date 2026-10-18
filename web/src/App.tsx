@@ -3,6 +3,7 @@ import { api, ApiError, clearToken, getToken, setRole, setToken, SOURCE_URL } fr
 import type { Project, Template } from './api/types.js'
 import { AcceptInvite } from './components/AcceptInvite.js'
 import { ChangePassword } from './components/ChangePassword.js'
+import { ThemeToggle } from './components/ThemeToggle.js'
 import { ForgotPassword, ResetPassword } from './components/ResetPassword.js'
 import { Setup } from './components/Setup.js'
 import { Team } from './components/Team.js'
@@ -146,6 +147,12 @@ function Login({ onDone }: { onDone(): void }) {
 
   return (
     <div className="auth">
+      {/* On the login screen too. It is the first thing anybody sees, and the
+          one screen where somebody who finds a bright page painful has no
+          other control to reach for. */}
+      <div className="auth-theme">
+        <ThemeToggle />
+      </div>
       <form className="auth-card" onSubmit={submit}>
         <h1>Stringline</h1>
         <p className="tagline">A schedule you can work to.</p>
@@ -258,6 +265,7 @@ function ProjectList({
       <header className="toolbar">
         <h1 className="brand">Stringline</h1>
         <div className="spacer" />
+        <ThemeToggle />
         <button className="ghost" onClick={() => setShowingTeam(true)}>
           Team
         </button>

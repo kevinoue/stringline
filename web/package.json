@@ -8,7 +8,8 @@
     "build": "tsc -b && vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
-    "shoot": "node scripts/shoot.mjs"
+    "shoot": "node scripts/shoot.mjs",
+    "theme-shoot": "node scripts/theme-shoot.mjs"
   },
   "dependencies": {
     "react": "^19.2.0",

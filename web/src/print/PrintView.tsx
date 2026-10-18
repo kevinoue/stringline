@@ -539,6 +539,28 @@ function Chart({
         />
       ))}
 
+      {/*
+        Vertical rules at the labelled ticks.
+        On paper this matters more than on screen: there is no pointer to hover
+        for a date, so the only way to read when a bar starts is to carry the
+        eye up to the axis. Across a seventeen-inch sheet that is not a
+        reasonable thing to ask, and a printed Gantt without gridlines is the
+        usual reason people end up annotating one by hand with a ruler.
+      */}
+      {timeline
+        .ticks()
+        .filter((t) => t.major)
+        .map((tick) => (
+          <line
+            key={`grid-${tick.x}`}
+            x1={tick.x}
+            y1={0}
+            x2={tick.x}
+            y2={height}
+            className="print-grid-line"
+          />
+        ))}
+
       {rows.map(({ task, step }, i) => {
         const y = i * rowHeight
 
