@@ -237,6 +237,75 @@ const sample = async () =>
   check('the attribute is what drives it', toggled === 'light')
 }
 
+console.log('\n== buttons read as buttons ==')
+{
+  /*
+   * How far a button's face sits from the surface behind it.
+   *
+   * The first version drew buttons in `--surface-2`, which is a 2% step from
+   * the panel they sit on — they read as labels, not controls, and in dark it
+   * was worse. `getComputedStyle().backgroundColor` is useless here because
+   * the face is a gradient, so the stops are parsed out of `background-image`
+   * and averaged.
+   */
+  const faceOf = (el) => {
+    const cs = getComputedStyle(el)
+    const stops = (cs.backgroundImage || '').match(/rgba?\([^)]*\)/g)
+    if (!stops || stops.length < 2) return cs.backgroundColor
+    const nums = stops.map((s) => s.match(/[\d.]+/g).slice(0, 3).map(Number))
+    const avg = [0, 1, 2].map((i) => Math.round(nums.reduce((t, n) => t + n[i], 0) / nums.length))
+    return `rgb(${avg.join(', ')})`
+  }
+
+  for (const theme of ['light', 'dark']) {
+    await page.evaluate((t) => { document.documentElement.dataset.theme = t }, theme)
+    await page.waitForTimeout(150)
+
+    const measured = await page.evaluate((faceSrc) => {
+      const face = eval(`(${faceSrc})`)
+      const behind = (el) => {
+        let node = el.parentElement
+        while (node) {
+          const bg = getComputedStyle(node).backgroundColor
+          const alpha = bg.startsWith('rgba') ? Number(bg.match(/[\d.]+/g)[3]) : 1
+          if (alpha > 0) return bg
+          node = node.parentElement
+        }
+        return 'rgb(255, 255, 255)'
+      }
+      const btn = [...document.querySelectorAll('.toolbar button')]
+        .find((b) => !b.classList.contains('ghost') && !b.classList.contains('active'))
+      const primary = document.querySelector('.panel button.primary')
+      return {
+        face: face(btn),
+        behind: behind(btn),
+        raised: getComputedStyle(btn).boxShadow !== 'none',
+        gradient: getComputedStyle(btn).backgroundImage.includes('gradient'),
+        primaryFace: primary ? face(primary) : null,
+        primaryBehind: primary ? behind(primary) : null,
+        // A field should look pressed into the surface, not raised out of it.
+        fieldInset: getComputedStyle(document.querySelector('.panel input')).boxShadow.includes('inset'),
+      }
+    }, faceOf.toString())
+
+    const step = contrast(measured.face, measured.behind)
+    // Modest on purpose — a button that shouts is worse than one that
+    // whispers. 1.15 is roughly where an edge stops being deniable.
+    check(`${theme}: a button is distinguishable from what is behind it`,
+      step >= 1.15, `${step.toFixed(2)}:1  ${measured.face} on ${measured.behind}`)
+    check(`${theme}: and reads as raised`, measured.raised && measured.gradient)
+    check(`${theme}: the primary action is unmistakable`,
+      contrast(measured.primaryFace, measured.primaryBehind) >= 2.5,
+      `${contrast(measured.primaryFace, measured.primaryBehind).toFixed(1)}:1`)
+    check(`${theme}: fields are recessed, not raised`, measured.fieldInset)
+
+    // The reported complaint, as an assertion: no warm cast on a neutral
+    // control. Blue channel at or above red keeps it cool or neutral.
+    const [r, , b] = measured.face.match(/\d+/g).map(Number)
+    check(`${theme}: the button face is neutral or cool, never warm`, b >= r, measured.face)
+  }
+}
+
 console.log('\n== the toggle remembers ==')
 {
   await page.locator('.toolbar .theme-toggle').click()
